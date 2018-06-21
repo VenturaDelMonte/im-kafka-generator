@@ -33,6 +33,8 @@ public class KafkaNexmarkGenerator {
 	private static final long ONE_MEGABYTE = 1024L * 1024L;
 	private static final long ONE_GIGABYTE = 1024L * 1024L * 1024L;
 
+	private static final ThreadGroup THREAD_GROUP = new ThreadGroup("Generator Thread Group");
+
 	private static final Logger LOG = LoggerFactory.getLogger(KafkaNexmarkGenerator.class);
 
 	public static void main(String[] args) {
@@ -48,8 +50,8 @@ public class KafkaNexmarkGenerator {
 
 		ExecutorService workers = Executors.newFixedThreadPool(params.personsWorkers + params.auctionsWorkers);
 
-		LOG.info("Ready to start Nexmark generator with {} partitions and {} workers for persons and {} partitions and {} workers for auctions broker {}",
-				params.personsPartition, params.personsWorkers, params.auctionsPartition, params.auctionsWorkers, params.hostname);
+		LOG.info("Ready to start Nexmark generator with {} partitions and {} workers for persons and {} partitions and {} workers for auctions generator {} kafkaServers {}",
+				params.personsPartition, params.personsWorkers, params.auctionsPartition, params.auctionsWorkers, params.hostname, params.kafkaServers);
 
 		Properties cfg = new Properties();
 
@@ -254,7 +256,7 @@ public class KafkaNexmarkGenerator {
 			ScheduledThreadPoolExecutor executor = new ScheduledThreadPoolExecutor(1, new ThreadFactory() {
 				@Override
 				public Thread newThread(Runnable r) {
-					Thread t = new Thread(r);
+					Thread t = new Thread(THREAD_GROUP, r);
 					t.setDaemon(true);
 					return t;
 				}
