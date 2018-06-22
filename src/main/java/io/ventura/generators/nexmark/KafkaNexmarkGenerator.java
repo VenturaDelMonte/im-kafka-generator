@@ -94,7 +94,7 @@ public class KafkaNexmarkGenerator {
 
 	private static final int CACHED_BUFFERS = 8192 * 2;
 
-	private static final int METADATA_SIZE = 4 + 4;
+	private static final int METADATA_SIZE = 4 + 4 + 8;
 
 	private final static int PERSON_RECORD_SIZE = 72;
 	private final static int AUCTION_RECORD_SIZE = 49;
@@ -295,7 +295,9 @@ public class KafkaNexmarkGenerator {
 					ByteBuffer buf = cachedBuffers.take();
 					buf.putInt(chk);
 					int itemsInThisBuffer = (int) Math.min(itemsPerBuffer, pending);
+					long backlog = pending - itemsInThisBuffer;
 					buf.putInt(itemsInThisBuffer);
+					buf.putLong(backlog);
 					for (int k = 0; k < itemsInThisBuffer && i < recordsToGenerate; k++, i++, pending--) {
 						writeItem(r, buf);
 					}
