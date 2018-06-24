@@ -1,10 +1,12 @@
 package io.ventura.generators.nexmark;
 
+import javax.annotation.Nonnegative;
+
 public class ThroughputThrottler {
 
 	private static final long NS_PER_MS = 1000000L;
 	private static final long NS_PER_SEC = 1000 * NS_PER_MS;
-	private static final long MIN_SLEEP_NS = 2 * NS_PER_MS;
+	private static final long MIN_SLEEP_NS = 10 * NS_PER_MS;
 
 	private final long startMs;
 	private final long sleepTimeNs;
@@ -13,11 +15,15 @@ public class ThroughputThrottler {
 	private long sleepDeficitNs = 0;
 	private boolean wakeup = false;
 
+	private long lastTimeCheck;
+	private long lastAmountCheck = 0;
+
 	/**
 	 * @param targetThroughput Can be messages/sec or bytes/sec
 	 * @param startMs          When the very first message is sent
 	 */
-	public ThroughputThrottler(long targetThroughput, long startMs) {
+	public ThroughputThrottler(@Nonnegative long targetThroughput, @Nonnegative long startMs) {
+		this.lastTimeCheck = milliSecondFromNano();
 		this.startMs = startMs;
 		this.targetThroughput = targetThroughput;
 		this.sleepTimeNs = targetThroughput > 0 ?
@@ -25,44 +31,30 @@ public class ThroughputThrottler {
 						   Long.MAX_VALUE;
 	}
 
-	/**
-	 * @param amountSoFar bytes produced so far if you want to throttle data throughput, or
-	 *                    messages produced so far if you want to throttle message throughput.
-	 * @param sendStartMs timestamp of the most recently sent message
-	 * @return
-	 */
-	public boolean shouldThrottle(long amountSoFar, long sendStartMs) {
-		if (this.targetThroughput < 0) {
-			// No throttling in this case
-			return false;
-		}
+	public static long milliSecondFromNano() {
+		return System.nanoTime() / 1000000;
+    }
+
+
+	public void throttleIfNeeded(long amountSoFar, long sendStartMs) {
 
 		float elapsedSec = (sendStartMs - startMs) / 1000.f;
-		return elapsedSec > 0 && (amountSoFar / elapsedSec) > this.targetThroughput;
-	}
 
-	/**
-	 * Occasionally blocks for small amounts of time to achieve targetThroughput.
-	 *
-	 * Note that if targetThroughput is 0, this will block extremely aggressively.
-	 */
-	public void throttle() {
-		if (targetThroughput == 0) {
-			try {
-				synchronized (this) {
-					while (!wakeup) {
-						this.wait();
-					}
-				}
-			} catch (InterruptedException e) {
-				// do nothing
-			}
+		if (elapsedSec <= 0) {
 			return;
 		}
 
-		// throttle throughput by sleeping, on average,
-		// (1 / this.throughput) seconds between "things sent"
-		sleepDeficitNs += sleepTimeNs;
+		float currentThroughput = amountSoFar / elapsedSec;
+
+		if (!(currentThroughput > this.targetThroughput)) {
+			return;
+		}
+
+		float now = milliSecondFromNano();
+		float interval = now - lastTimeCheck;
+//		float delta = (amountSoFar - lastAmountCheck) / interval;
+
+		sleepDeficitNs += (long) ((currentThroughput * NS_PER_SEC / targetThroughput) - interval);
 
 		// If enough sleep deficit has accumulated, sleep a little
 		if (sleepDeficitNs >= MIN_SLEEP_NS) {
@@ -88,16 +80,10 @@ public class ThroughputThrottler {
 					sleepDeficitNs -= sleepElapsedNs;
 				}
 			}
+			lastTimeCheck = milliSecondFromNano();
+			lastAmountCheck = amountSoFar;
 		}
 	}
 
-	/**
-	 * Wakeup the throttler if its sleeping.
-	 */
-	public void wakeup() {
-		synchronized (this) {
-			wakeup = true;
-			this.notifyAll();
-		}
-	}
+
 }

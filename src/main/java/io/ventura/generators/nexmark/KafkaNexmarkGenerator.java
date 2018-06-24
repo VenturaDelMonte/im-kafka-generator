@@ -306,9 +306,7 @@ public class KafkaNexmarkGenerator {
 					kafkaProducer.send(kafkaRecord, new InternalCallback(cachedBuffers, buf, sharedCounter, itemsPerBuffer));
 					sentBytes += BUFFER_SIZE;
 					sentItems += itemsPerBuffer;
-					if (throughputThrottler.shouldThrottle(sentBytes, System.currentTimeMillis())) {
-						throughputThrottler.throttle();
-					}
+					throughputThrottler.throttleIfNeeded(sentBytes, System.currentTimeMillis());
 				}
 				while (!sharedCounter.compareAndSet(sentItems, 0)) {
 					Thread.sleep(100);
