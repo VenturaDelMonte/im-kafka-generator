@@ -282,10 +282,9 @@ public class KafkaNexmarkGenerator {
 			ScheduledFuture<?> future = executor.scheduleAtFixedRate(new ThroughtputLogger(sharedCounter, name, 5, itemSize()), 5, 5, TimeUnit.SECONDS);
 
 			double startNs = System.nanoTime();
-			long startMs = System.currentTimeMillis();
 			long sentBytes = 0;
 			long sentItems = 0;
-			ThroughputThrottler throughputThrottler = new ThroughputThrottler(desiredThroughputBytesPerSecond, startMs);
+			ThroughputThrottler throughputThrottler = new ThroughputThrottler(desiredThroughputBytesPerSecond, ((long) startNs) / 1000000);
 			ThreadLocalRandom r = ThreadLocalRandom.current();
 			int chk = genChecksum();
 			try {
@@ -306,7 +305,7 @@ public class KafkaNexmarkGenerator {
 					kafkaProducer.send(kafkaRecord, new InternalCallback(cachedBuffers, buf, sharedCounter, itemsPerBuffer));
 					sentBytes += BUFFER_SIZE;
 					sentItems += itemsPerBuffer;
-					throughputThrottler.throttleIfNeeded(sentBytes, System.currentTimeMillis());
+					throughputThrottler.throttleIfNeeded(sentBytes, System.nanoTime() / 1000000);
 				}
 				while (!sharedCounter.compareAndSet(sentItems, 0)) {
 					Thread.sleep(100);
