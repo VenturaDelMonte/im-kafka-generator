@@ -821,10 +821,10 @@ public class Lastnames {
     private static final Charset US_ASCII = Charset.forName("US-ASCII");
 
 
-    public static final byte[][] LASTNAMES_10 = new byte[NUM_LASTNAMES][];
+    public static final byte[][] LASTNAMES_16 = new byte[NUM_LASTNAMES][];
     static {
     	for (int i = 0; i < NUM_LASTNAMES; i++) {
-    		LASTNAMES_10[i] = LASTNAMES[i].substring(0, Math.min(10, LASTNAMES[i].length())).getBytes(US_ASCII);
+    		LASTNAMES_16[i] = LASTNAMES[i].substring(0, Math.min(16, LASTNAMES[i].length())).getBytes(US_ASCII);
 		}
 	}
 }

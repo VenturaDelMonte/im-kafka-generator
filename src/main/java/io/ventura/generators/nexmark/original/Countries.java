@@ -56,10 +56,10 @@ public class Countries {
     public static final int NUM_COUNTRIES = COUNTRIES.length;
 
 	private static final Charset US_ASCII = Charset.forName("US-ASCII");
-     public static final byte[][] COUNTRIES_10 = new byte[NUM_COUNTRIES][];
+     public static final byte[][] COUNTRIES_16 = new byte[NUM_COUNTRIES][];
     static {
     	for (int i = 0; i < NUM_COUNTRIES; i++) {
-    		COUNTRIES_10[i] = COUNTRIES[i].substring(0, Math.min(10, COUNTRIES[i].length())).getBytes(US_ASCII);
+    		COUNTRIES_16[i] = COUNTRIES[i].substring(0, Math.min(16, COUNTRIES[i].length())).getBytes(US_ASCII);
 		}
 	}
 }
