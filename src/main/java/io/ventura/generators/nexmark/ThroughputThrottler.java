@@ -10,7 +10,7 @@ public class ThroughputThrottler {
 
 	private final long startMs;
 	private final long sleepTimeNs;
-	private final long targetThroughput;
+	private final long targetThroughputBytes;
 
 	private long sleepDeficitNs = 0;
 	private boolean wakeup = false;
@@ -22,12 +22,12 @@ public class ThroughputThrottler {
 	 * @param targetThroughput Can be messages/sec or bytes/sec
 	 * @param startMs          When the very first message is sent
 	 */
-	public ThroughputThrottler(@Nonnegative long targetThroughput, @Nonnegative long startMs) {
+	public ThroughputThrottler(@Nonnegative long targetThroughputBytes, @Nonnegative long startMs) {
 		this.lastTimeCheck = milliSecondFromNano();
 		this.startMs = startMs;
-		this.targetThroughput = targetThroughput;
-		this.sleepTimeNs = targetThroughput > 0 ?
-						   NS_PER_SEC / targetThroughput :
+		this.targetThroughputBytes = targetThroughputBytes;
+		this.sleepTimeNs = targetThroughputBytes > 0 ?
+						   NS_PER_SEC / targetThroughputBytes :
 						   Long.MAX_VALUE;
 	}
 
@@ -36,7 +36,7 @@ public class ThroughputThrottler {
     }
 
 
-	public void throttleIfNeeded(long amountSoFar, long sendStartMs) {
+	public void throttleIfNeeded(long amountSoFarBytes, long sendStartMs) {
 
 		float elapsedSec = (sendStartMs - startMs) / 1000.f;
 
@@ -44,9 +44,9 @@ public class ThroughputThrottler {
 			return;
 		}
 
-		float currentThroughput = amountSoFar / elapsedSec;
+		float currentThroughput = amountSoFarBytes / elapsedSec;
 
-		if (!(currentThroughput > this.targetThroughput)) {
+		if (!(currentThroughput > this.targetThroughputBytes)) {
 			return;
 		}
 
@@ -54,7 +54,7 @@ public class ThroughputThrottler {
 		float interval = now - lastTimeCheck;
 //		float delta = (amountSoFar - lastAmountCheck) / interval;
 
-		sleepDeficitNs += (long) ((currentThroughput * NS_PER_SEC / targetThroughput) - interval);
+		sleepDeficitNs += (long) ((currentThroughput * NS_PER_SEC / targetThroughputBytes) - interval);
 
 		// If enough sleep deficit has accumulated, sleep a little
 		if (sleepDeficitNs >= MIN_SLEEP_NS) {
@@ -81,7 +81,7 @@ public class ThroughputThrottler {
 				}
 			}
 			lastTimeCheck = milliSecondFromNano();
-			lastAmountCheck = amountSoFar;
+			lastAmountCheck = amountSoFarBytes;
 		}
 	}
 

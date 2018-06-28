@@ -32,8 +32,11 @@ import java.util.concurrent.atomic.AtomicLong;
 
 public class KafkaNexmarkGenerator {
 
+	private static final long ONE_KILOBYTE = 1024L;
 	private static final long ONE_MEGABYTE = 1024L * 1024L;
 	private static final long ONE_GIGABYTE = 1024L * 1024L * 1024L;
+
+	private static final long LOGGING_THRESHOLD = 128 * ONE_MEGABYTE;
 
 	private static final ThreadGroup THREAD_GROUP = new ThreadGroup("Generator Thread Group");
 
@@ -93,13 +96,13 @@ public class KafkaNexmarkGenerator {
 			for (int j = 0; j < params.personsWorkers; j++) {
 				Properties workerConfig = (Properties) cfg.clone();
 				cfg.put(ProducerConfig.CLIENT_ID_CONFIG, "nexmarkPersonsGen-" + j);
-				workers.submit(new PersonsGenerator(j, params.personsPartition, params.hostname, partitions, new KafkaProducer<>(workerConfig), params.inputSizeItemsPersons, controller, params.desiredThroughputMBSec));
+				workers.submit(new PersonsGenerator(j, params.personsPartition, params.hostname, partitions, new KafkaProducer<>(workerConfig), params.inputSizeItemsPersons, controller, params.desiredPersonsThroughputKBSec));
 			}
 
 			for (int j = 0; j < params.auctionsWorkers; j++) {
 				Properties workerConfig = (Properties) cfg.clone();
 				cfg.put(ProducerConfig.CLIENT_ID_CONFIG, "nexmarkAuctiosGen-" + j);
-				workers.submit(new AuctionsGenerator(j, params.auctionsPartition, params.hostname, partitions, new KafkaProducer<>(workerConfig), params.inputSizeItemsAuctions, controller, params.desiredThroughputMBSec));
+				workers.submit(new AuctionsGenerator(j, params.auctionsPartition, params.hostname, partitions, new KafkaProducer<>(workerConfig), params.inputSizeItemsAuctions, controller, params.desiredAuctionsThroughputKBSec));
 			}
 
 			controller.await();
@@ -191,9 +194,9 @@ public class KafkaNexmarkGenerator {
 				KafkaProducer<byte[], ByteBuffer> kafkaProducer,
 				long inputSizeItemsPersons,
 				CountDownLatch controller,
-				int desiredThroughputMBSec) {
+				int desiredThroughputKBSec) {
 
-			super(workerId, numPartition, PERSONS_TOPIC, hostname + ".persons." + workerId, partitions, kafkaProducer, inputSizeItemsPersons, controller, desiredThroughputMBSec);
+			super(workerId, numPartition, PERSONS_TOPIC, hostname + ".persons." + workerId, partitions, kafkaProducer, inputSizeItemsPersons, controller, desiredThroughputKBSec);
 		}
 
 		@Override
@@ -266,7 +269,7 @@ public class KafkaNexmarkGenerator {
 				KafkaProducer<byte[], ByteBuffer> kafkaProducer,
 				long inputSizeItemsPersons,
 				CountDownLatch controller,
-				int desiredThroughputMBSec) {
+				int desiredThroughputKBSec) {
 			this.numPartition = numPartition;
 			this.inputSizeItemsPersons = inputSizeItemsPersons * ONE_GIGABYTE;
 			this.kafkaProducer = kafkaProducer;
@@ -279,7 +282,7 @@ public class KafkaNexmarkGenerator {
 			b.putInt(workerId);
 			b.putLong(Long.reverse(System.nanoTime()) ^ System.currentTimeMillis());
 			b.putInt(ThreadLocalFixedSeedRandom.current().nextInt());
-			this.desiredThroughputBytesPerSecond = ONE_MEGABYTE * desiredThroughputMBSec;
+			this.desiredThroughputBytesPerSecond = ONE_KILOBYTE * desiredThroughputKBSec;
 		}
 
 		public abstract int itemSize();
@@ -326,9 +329,9 @@ public class KafkaNexmarkGenerator {
 			ThreadLocalFixedSeedRandom randomness = ThreadLocalFixedSeedRandom.current();
 			int chk = genChecksum();
 			try {
-				long bufferId = 0;
 				long pending = recordsToGenerate;
-				for (long i = 0; i < recordsToGenerate; bufferId++) {
+				long sentBytesDelta = 0;
+				for (long i = 0; i < recordsToGenerate; ) {
 					ByteBuffer buf = cachedBuffers.take();
 					buf.putInt(chk);
 					int itemsInThisBuffer = (int) Math.min(itemsPerBuffer, pending);
@@ -343,7 +346,16 @@ public class KafkaNexmarkGenerator {
 					kafkaProducer.send(kafkaRecord, new InternalCallback(cachedBuffers, buf, sharedCounter, itemsPerBuffer));
 					sentBytes += BUFFER_SIZE;
 					sentItems += itemsPerBuffer;
-					throughputThrottler.throttleIfNeeded(sentBytes, System.nanoTime() / 1000000);
+					long nowMs = System.nanoTime() / 1000000;
+					throughputThrottler.throttleIfNeeded(sentBytes, nowMs);
+					sentBytesDelta += BUFFER_SIZE;
+					if (sentBytesDelta > LOGGING_THRESHOLD) {
+						LOG.info("{} has just sent {} MB to kafka in {}",
+								name,
+								sentBytes / ONE_MEGABYTE,
+								(nowMs - (startNs / 1_000_000) / 1000));
+						sentBytesDelta = 0;
+					}
 				}
 				while (!sharedCounter.compareAndSet(sentItems, 0)) {
 					Thread.sleep(100);

@@ -34,9 +34,10 @@ public class GeneratorParameters {
 	@Parameter(names = {"-inputSizeItemsPersons"}, description = "Specifies the partition of the persons topic of kafka")
 	public long inputSizeItemsPersons = 1;
 
-	@Parameter(names = {"-desiredThroughputMBSec"}, description = "Specifies the partition of the persons topic of kafka")
-	public int desiredThroughputMBSec = 1;
+	@Parameter(names = {"-desiredPersonsThroughputKBSec"}, description = "Specifies the partition of the persons topic of kafka")
+	public int desiredPersonsThroughputKBSec = 512;
 
-
+	@Parameter(names = {"-desiredAuctionsThroughputKBSec"}, description = "Specifies the partition of the persons topic of kafka")
+	public int desiredAuctionsThroughputKBSec = 512;
 
 }
