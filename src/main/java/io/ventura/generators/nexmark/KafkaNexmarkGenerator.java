@@ -16,6 +16,7 @@ import org.apache.kafka.clients.producer.RecordMetadata;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.annotation.Nonnull;
 import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.Properties;
@@ -42,24 +43,37 @@ public class KafkaNexmarkGenerator {
 
 	private static final Logger LOG = LoggerFactory.getLogger(KafkaNexmarkGenerator.class);
 
-	private static HashMap<String, int[]> PARTITIONS_RANGES = new HashMap<>();
+	private static HashMap<String, int[]> PERSONS_PARTITIONS_RANGES = new HashMap<>();
+	private static HashMap<String, int[]> AUCTIONS_PARTITIONS_RANGES = new HashMap<>();
 
 	static {
 		// PAY ATTENTION HERE
 
-		PARTITIONS_RANGES.put("localhost-2", new int[] { 0, 1});
+		PERSONS_PARTITIONS_RANGES.put("localhost-2", new int[] { 0, 1});
 
-		PARTITIONS_RANGES.put("cloud-14-32", new int[] { 0, 1, 2, 3, 4, 5, 6, 7 });
-		PARTITIONS_RANGES.put("cloud-23-32", new int[] { 8, 9, 10, 11, 12, 13, 14, 15 });
-		PARTITIONS_RANGES.put("cloud-24-32", new int[] { 16, 17, 18, 19, 20, 21, 22, 23 });
-		PARTITIONS_RANGES.put("cloud-25-32", new int[] { 24, 25, 26, 27, 28, 29, 30, 31, 32 });
+		PERSONS_PARTITIONS_RANGES.put("cloud-14-32", new int[] { 0, 1, 2, 3, 4, 5, 6, 7 });
+		PERSONS_PARTITIONS_RANGES.put("cloud-23-32", new int[] { 8, 9, 10, 11, 12, 13, 14, 15 });
+		PERSONS_PARTITIONS_RANGES.put("cloud-24-32", new int[] { 16, 17, 18, 19, 20, 21, 22, 23 });
+		PERSONS_PARTITIONS_RANGES.put("cloud-25-32", new int[] { 24, 25, 26, 27, 28, 29, 30, 31, 32 });
 
-		PARTITIONS_RANGES.put("cloud-14-16", new int[] {  0,  1,  2,  3 });
-		PARTITIONS_RANGES.put("cloud-23-16", new int[] {  4,  5,  6,  7 });
-		PARTITIONS_RANGES.put("cloud-24-16", new int[] {  8,  9, 10, 11 });
-		PARTITIONS_RANGES.put("cloud-25-16", new int[] { 12, 13, 14, 15 });
+		PERSONS_PARTITIONS_RANGES.put("cloud-14-16", new int[] {  0,  1,  2,  3 });
+		PERSONS_PARTITIONS_RANGES.put("cloud-23-16", new int[] {  4,  5,  6,  7 });
+		PERSONS_PARTITIONS_RANGES.put("cloud-24-16", new int[] {  8,  9, 10, 11 });
+		PERSONS_PARTITIONS_RANGES.put("cloud-25-16", new int[] { 12, 13, 14, 15 });
 
-		PARTITIONS_RANGES.put(new String(RandomStrings.RANDOM_STRINGS_NAME[0]), null); // DO NOT REMOVE!
+		AUCTIONS_PARTITIONS_RANGES.put("localhost-2", new int[] { 0, 1});
+
+		AUCTIONS_PARTITIONS_RANGES.put("cloud-14-32", new int[] { 0, 1, 2, 3, 4, 5, 6, 7 });
+		AUCTIONS_PARTITIONS_RANGES.put("cloud-23-32", new int[] { 8, 9, 10, 11, 12, 13, 14, 15 });
+		AUCTIONS_PARTITIONS_RANGES.put("cloud-24-32", new int[] { 16, 17, 18, 19, 20, 21, 22, 23 });
+		AUCTIONS_PARTITIONS_RANGES.put("cloud-25-32", new int[] { 24, 25, 26, 27, 28, 29, 30, 31, 32 });
+
+		AUCTIONS_PARTITIONS_RANGES.put("cloud-14-16", new int[] {  0,  1,  2,  3 });
+		AUCTIONS_PARTITIONS_RANGES.put("cloud-23-16", new int[] {  4,  5,  6,  7 });
+		AUCTIONS_PARTITIONS_RANGES.put("cloud-24-16", new int[] {  8,  9, 10, 11 });
+		AUCTIONS_PARTITIONS_RANGES.put("cloud-25-16", new int[] { 12, 13, 14, 15 });
+
+		AUCTIONS_PARTITIONS_RANGES.put(new String(RandomStrings.RANDOM_STRINGS_NAME[0]), null); // DO NOT REMOVE! This is needed to init RandomStrings from the main thread first
 	}
 
 	public static void main(String[] args) {
@@ -89,22 +103,24 @@ public class KafkaNexmarkGenerator {
 		cfg.put(ProducerConfig.ACKS_CONFIG, "all");
 		cfg.put(ProducerConfig.LINGER_MS_CONFIG, "100");
 
-		int[] partitions = PARTITIONS_RANGES.get(params.hostname + "-" + params.personsPartition);
+		int[] partitionsPersons = PERSONS_PARTITIONS_RANGES.get(params.hostname + "-" + params.personsPartition);
+		int[] partitionsAuctions = AUCTIONS_PARTITIONS_RANGES.get(params.hostname + "-" + params.auctionsPartition);
 
 		try {
 			CountDownLatch controller = new CountDownLatch(params.personsWorkers + params.auctionsWorkers);
+			CountDownLatch fairStarter = new CountDownLatch(1);
 			for (int j = 0; j < params.personsWorkers; j++) {
 				Properties workerConfig = (Properties) cfg.clone();
-				cfg.put(ProducerConfig.CLIENT_ID_CONFIG, "nexmarkPersonsGen-" + j);
-				workers.submit(new PersonsGenerator(j, params.personsPartition, params.hostname, partitions, new KafkaProducer<>(workerConfig), params.inputSizeItemsPersons, controller, params.desiredPersonsThroughputKBSec));
+				workerConfig.put(ProducerConfig.CLIENT_ID_CONFIG, "nexmarkPersonsGen-" + j);
+				workers.submit(new PersonsGenerator(j, params.hostname, partitionsPersons, new KafkaProducer<>(workerConfig), params.inputSizeItemsPersons, controller, fairStarter, params.desiredPersonsThroughputKBSec));
 			}
 
 			for (int j = 0; j < params.auctionsWorkers; j++) {
 				Properties workerConfig = (Properties) cfg.clone();
-				cfg.put(ProducerConfig.CLIENT_ID_CONFIG, "nexmarkAuctiosGen-" + j);
-				workers.submit(new AuctionsGenerator(j, params.auctionsPartition, params.hostname, partitions, new KafkaProducer<>(workerConfig), params.inputSizeItemsAuctions, controller, params.desiredAuctionsThroughputKBSec));
+				workerConfig.put(ProducerConfig.CLIENT_ID_CONFIG, "nexmarkAuctiosGen-" + j);
+				workers.submit(new AuctionsGenerator(j, params.hostname, partitionsAuctions, new KafkaProducer<>(workerConfig), params.inputSizeItemsAuctions, controller, fairStarter, params.desiredAuctionsThroughputKBSec));
 			}
-
+			fairStarter.countDown();
 			controller.await();
 			workers.shutdown();
 			workers.awaitTermination(1, TimeUnit.SECONDS);
@@ -122,7 +138,7 @@ public class KafkaNexmarkGenerator {
 
 	private static final int METADATA_SIZE = 4 + 4 + 8;
 
-	private final static int PERSON_RECORD_SIZE = 128;
+	private final static int PERSON_RECORD_SIZE = 206;
 	private final static int AUCTION_RECORD_SIZE = 269;
 
 	private static final AtomicLong currentPersonId = new AtomicLong();
@@ -134,8 +150,8 @@ public class KafkaNexmarkGenerator {
 		private static final int MIN_AUCTION_LENGTH_MSEC = 2 * 60 * 60 * 1_000; // 2 hours
 
 
-		AuctionsGenerator(int workerId, int numPartition, String hostname, int[] partitions, KafkaProducer<byte[], ByteBuffer> kafkaProducer, long inputSizeItemsPersons, CountDownLatch controller, int desiredThroughputMBSec) {
-			super(workerId, numPartition, AUCTIONS_TOPIC, hostname + ".auctions." + workerId, partitions, kafkaProducer, inputSizeItemsPersons, controller, desiredThroughputMBSec);
+		AuctionsGenerator(int workerId, String hostname, int[] partitions, KafkaProducer<byte[], ByteBuffer> kafkaProducer, long inputSizeItemsPersons, CountDownLatch controller, CountDownLatch fairStarter, int desiredThroughputMBSec) {
+			super(workerId, AUCTIONS_TOPIC, hostname + ".auctions." + workerId, partitions, kafkaProducer, inputSizeItemsPersons, controller, fairStarter, desiredThroughputMBSec);
 		}
 
 		@Override
@@ -188,15 +204,15 @@ public class KafkaNexmarkGenerator {
 
 		PersonsGenerator(
 				int workerId,
-				int numPartition,
 				String hostname,
 				int[] partitions,
 				KafkaProducer<byte[], ByteBuffer> kafkaProducer,
 				long inputSizeItemsPersons,
 				CountDownLatch controller,
+				 CountDownLatch fairStarter,
 				int desiredThroughputKBSec) {
 
-			super(workerId, numPartition, PERSONS_TOPIC, hostname + ".persons." + workerId, partitions, kafkaProducer, inputSizeItemsPersons, controller, desiredThroughputKBSec);
+			super(workerId, PERSONS_TOPIC, hostname + ".persons." + workerId, partitions, kafkaProducer, inputSizeItemsPersons, controller, fairStarter, desiredThroughputKBSec);
 		}
 
 		@Override
@@ -212,33 +228,33 @@ public class KafkaNexmarkGenerator {
 			int ict = r.nextInt(Countries.NUM_COUNTRIES);
 			int icy = r.nextInt(Cities.NUM_CITIES);
 			buf.putLong(currentPersonId.getAndIncrement()); // 8
-			buf.put(Firstnames.FIRSTNAMES_16[ifn]);
-			for (int j = 0, skip = 16 - Firstnames.FIRSTNAMES_16[ifn].length; j < skip; j++) {
-				buf.put((byte) 0x00);
-			} // 24
-			buf.put(Lastnames.LASTNAMES_16[iln]);
-			for (int j = 0, skip = 16 - Lastnames.LASTNAMES_16[iln].length; j < skip; j++) {
+			buf.put(Firstnames.FIRSTNAMES_32[ifn]);
+			for (int j = 0, skip = 32 - Firstnames.FIRSTNAMES_32[ifn].length; j < skip; j++) {
 				buf.put((byte) 0x00);
 			} // 40
-			buf.put(Emails.EMAILS_16[iem]);
-			for (int j = 0, skip = 16 - Emails.EMAILS_16[iem].length; j < skip; j++) {
+			buf.put(Lastnames.LASTNAMES_32[iln]);
+			for (int j = 0, skip = 32 - Lastnames.LASTNAMES_32[iln].length; j < skip; j++) {
 				buf.put((byte) 0x00);
-			} // 56
-			buf.put(Cities.CITIES_16[icy]);
-			for (int j = 0, skip = 16 - Cities.CITIES_16[icy].length; j < skip; j++) {
+			} // 72
+			buf.put(Emails.EMAILS_32[iem]);
+			for (int j = 0, skip = 32 - Emails.EMAILS_32[iem].length; j < skip; j++) {
 				buf.put((byte) 0x00);
-			} // 74
-			buf.put(Countries.COUNTRIES_16[ict]);
-			for (int j = 0, skip = 16 - Countries.COUNTRIES_16[ict].length; j < skip; j++) {
+			} // 104
+			buf.put(Cities.CITIES_32[icy]);
+			for (int j = 0, skip = 32 - Cities.CITIES_32[icy].length; j < skip; j++) {
 				buf.put((byte) 0x00);
-			} // 90
-			buf.putLong(r.nextLong()); // 98
-			buf.putLong(r.nextLong(9000) + 1000); // 106
-			buf.putInt(r.nextInt(9000) + 1000); // 110
-			buf.putInt(r.nextInt(50) + 18); // 114
-			buf.putInt(r.nextInt(9000) + 1000); // 118
-			buf.putShort((short) (r.nextBoolean() ? 0 : 1)); // 120
-			buf.putLong(System.currentTimeMillis()); // 128
+			} // 136
+			buf.put(Countries.COUNTRIES_32[ict]);
+			for (int j = 0, skip = 32 - Countries.COUNTRIES_32[ict].length; j < skip; j++) {
+				buf.put((byte) 0x00);
+			} // 168
+			buf.putLong(r.nextLong()); // 176
+			buf.putLong(r.nextLong(9000) + 1000); // 184
+			buf.putInt(r.nextInt(9000) + 1000); // 188
+			buf.putInt(r.nextInt(50) + 18); // 192
+			buf.putInt(r.nextInt(9000) + 1000); // 196
+			buf.putShort((short) (r.nextBoolean() ? 0 : 1)); // 198
+			buf.putLong(System.currentTimeMillis()); // 206
 		}
 
 		@Override
@@ -251,26 +267,25 @@ public class KafkaNexmarkGenerator {
 	public static abstract class AbstractGenerator implements Runnable {
 
 		private final String name, topicName;
-		private final int numPartition;
 		private final byte[] genId;
 		private final int targetPartition;
 		private final long inputSizeItemsPersons;
 		private final KafkaProducer<byte[], ByteBuffer> kafkaProducer;
 		private final CountDownLatch controller;
 		private final long desiredThroughputBytesPerSecond;
+		private final CountDownLatch fairStarter;
 
 
 		AbstractGenerator(
 				int workerId,
-				int numPartition,
 				String topicName,
 				String name,
 				int[] partitions,
 				KafkaProducer<byte[], ByteBuffer> kafkaProducer,
 				long inputSizeItemsPersons,
 				CountDownLatch controller,
+				CountDownLatch fairStarter,
 				int desiredThroughputKBSec) {
-			this.numPartition = numPartition;
 			this.inputSizeItemsPersons = inputSizeItemsPersons * ONE_GIGABYTE;
 			this.kafkaProducer = kafkaProducer;
 			this.controller = controller;
@@ -278,6 +293,7 @@ public class KafkaNexmarkGenerator {
 			this.genId = new byte[4 + 4 + 8];
 			this.targetPartition = partitions[workerId];
 			this.name = name;
+			this.fairStarter = fairStarter;
 			ByteBuffer b = ByteBuffer.wrap(genId);
 			b.putInt(workerId);
 			b.putLong(Long.reverse(System.nanoTime()) ^ System.currentTimeMillis());
@@ -293,42 +309,46 @@ public class KafkaNexmarkGenerator {
 
 		@Override
 		public void run() {
-
-			ScheduledThreadPoolExecutor executor = new ScheduledThreadPoolExecutor(1, new ThreadFactory() {
-				@Override
-				public Thread newThread(Runnable r) {
-					Thread t = new Thread(THREAD_GROUP, r);
-					t.setDaemon(true);
-					return t;
-				}
-			});
-
-			// tasks should be removed if the future is canceled
-			executor.setRemoveOnCancelPolicy(true);
-
-			// make sure shutdown removes all pending tasks
-			executor.setContinueExistingPeriodicTasksAfterShutdownPolicy(false);
-			executor.setExecuteExistingDelayedTasksAfterShutdownPolicy(false);
-
-			ArrayBlockingQueue<ByteBuffer> cachedBuffers = new ArrayBlockingQueue<>(CACHED_BUFFERS);
-			for (int i = 0; i < CACHED_BUFFERS; i++) {
-				cachedBuffers.offer(ByteBuffer.allocate(BUFFER_SIZE));
-			}
-
-			long recordsToGenerate = inputSizeItemsPersons / itemSize();
-			int itemsPerBuffer = (BUFFER_SIZE - METADATA_SIZE) / itemSize();
-
-			AtomicLong sharedCounter = new AtomicLong();
-
-			ScheduledFuture<?> future = executor.scheduleAtFixedRate(new ThroughtputLogger(sharedCounter, name, 5, itemSize()), 5, 5, TimeUnit.SECONDS);
-
-			double startNs = System.nanoTime();
-			long sentBytes = 0;
-			long sentItems = 0;
-			ThroughputThrottler throughputThrottler = new ThroughputThrottler(desiredThroughputBytesPerSecond, ((long) startNs) / 1000000);
-			ThreadLocalFixedSeedRandom randomness = ThreadLocalFixedSeedRandom.current();
-			int chk = genChecksum();
+			ArrayBlockingQueue<ByteBuffer> cachedBuffers = null;
+			ScheduledFuture<?> future = null;
 			try {
+				ScheduledThreadPoolExecutor executor = new ScheduledThreadPoolExecutor(1, new ThreadFactory() {
+					@Override
+					public Thread newThread(@Nonnull Runnable r) {
+						Thread t = new Thread(THREAD_GROUP, r);
+						t.setDaemon(true);
+						return t;
+					}
+				});
+
+				// tasks should be removed if the future is canceled
+				executor.setRemoveOnCancelPolicy(true);
+
+				// make sure shutdown removes all pending tasks
+				executor.setContinueExistingPeriodicTasksAfterShutdownPolicy(false);
+				executor.setExecuteExistingDelayedTasksAfterShutdownPolicy(false);
+
+				cachedBuffers = new ArrayBlockingQueue<>(CACHED_BUFFERS);
+				for (int i = 0; i < CACHED_BUFFERS; i++) {
+					cachedBuffers.offer(ByteBuffer.allocate(BUFFER_SIZE));
+				}
+
+				long recordsToGenerate = inputSizeItemsPersons / itemSize();
+				int itemsPerBuffer = (BUFFER_SIZE - METADATA_SIZE) / itemSize();
+
+				AtomicLong sharedCounter = new AtomicLong();
+
+				fairStarter.await();
+
+				future = executor.scheduleAtFixedRate(new ThroughtputLogger(sharedCounter, name, 5, itemSize()), 5, 5, TimeUnit.SECONDS);
+
+				double startNs = System.nanoTime();
+				long sentBytes = 0;
+				long sentItems = 0;
+				ThroughputThrottler throughputThrottler = new ThroughputThrottler(desiredThroughputBytesPerSecond, ((long) startNs) / 1_000_000);
+				ThreadLocalFixedSeedRandom randomness = ThreadLocalFixedSeedRandom.current();
+				int chk = genChecksum();
+
 				long pending = recordsToGenerate;
 				long sentBytesDelta = 0;
 				for (long i = 0; i < recordsToGenerate; ) {
@@ -346,14 +366,14 @@ public class KafkaNexmarkGenerator {
 					kafkaProducer.send(kafkaRecord, new InternalCallback(cachedBuffers, buf, sharedCounter, itemsPerBuffer));
 					sentBytes += BUFFER_SIZE;
 					sentItems += itemsPerBuffer;
-					long nowMs = System.nanoTime() / 1000000;
+					long nowMs = System.nanoTime() / 1_000_000;
 					throughputThrottler.throttleIfNeeded(sentBytes, nowMs);
 					sentBytesDelta += BUFFER_SIZE;
 					if (sentBytesDelta > LOGGING_THRESHOLD) {
 						LOG.info("{} has just sent {} MB to kafka in {}",
 								name,
 								sentBytes / ONE_MEGABYTE,
-								(nowMs - (startNs / 1_000_000) / 1000));
+								(nowMs - (startNs / 1_000_000) / 1_000));
 						sentBytesDelta = 0;
 					}
 				}
@@ -366,10 +386,14 @@ public class KafkaNexmarkGenerator {
 			} catch (Throwable error) {
 				LOG.error("Error: {}", error);
 			} finally {
-				cachedBuffers.clear();
+				if (cachedBuffers != null) {
+					cachedBuffers.clear();
+				}
 				kafkaProducer.close();
 				controller.countDown();
-				future.cancel(false);
+				if (future != null) {
+					future.cancel(false);
+				}
 			}
 		}
 	}

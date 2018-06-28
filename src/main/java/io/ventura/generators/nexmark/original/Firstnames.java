@@ -744,10 +744,10 @@ public class Firstnames {
 
     private static final Charset US_ASCII = Charset.forName("US-ASCII");
 
-    public static final byte[][] FIRSTNAMES_16 = new byte[NUM_FIRSTNAMES][];
+    public static final byte[][] FIRSTNAMES_32 = new byte[NUM_FIRSTNAMES][];
     static {
     	for (int i = 0; i < NUM_FIRSTNAMES; i++) {
-    		FIRSTNAMES_16[i] = FIRSTNAMES[i].substring(0, Math.min(16, FIRSTNAMES[i].length())).getBytes(US_ASCII);
+    		FIRSTNAMES_32[i] = FIRSTNAMES[i].substring(0, Math.min(32, FIRSTNAMES[i].length())).getBytes(US_ASCII);
 		}
 	}
 }

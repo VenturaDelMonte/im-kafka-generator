@@ -51,10 +51,10 @@ public class Cities {
 	public static final int NUM_CITIES = CITIES.length;
 
 	private static final Charset US_ASCII = Charset.forName("US-ASCII");
-	public static final byte[][] CITIES_16 = new byte[NUM_CITIES][];
+	public static final byte[][] CITIES_32 = new byte[NUM_CITIES][];
 	static {
 		for (int i = 0; i < NUM_CITIES; i++) {
-			CITIES_16[i] = CITIES[i].substring(0, Math.min(16, CITIES[i].length())).getBytes(US_ASCII);
+			CITIES_32[i] = CITIES[i].substring(0, Math.min(32, CITIES[i].length())).getBytes(US_ASCII);
 		}
 	}
 }
