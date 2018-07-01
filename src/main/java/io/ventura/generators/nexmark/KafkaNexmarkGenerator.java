@@ -89,8 +89,15 @@ public class KafkaNexmarkGenerator {
 
 		ExecutorService workers = Executors.newFixedThreadPool(params.personsWorkers + params.auctionsWorkers);
 
-		LOG.info("Ready to start Nexmark generator with {} partitions and {} workers for persons and {} partitions and {} workers for auctions generator {} kafkaServers {}",
-				params.personsPartition, params.personsWorkers, params.auctionsPartition, params.auctionsWorkers, params.hostname, params.kafkaServers);
+		LOG.info("Ready to start Nexmark generator with {} partitions and {} workers for persons topic ({} GB) and {} partitions and {} workers for auctions ({} GB) -- generator {} kafkaServers {}",
+				params.personsPartition,
+				params.personsWorkers,
+				params.inputSizeItemsPersons,
+				params.auctionsPartition,
+				params.auctionsWorkers,
+				params.inputSizeItemsAuctions,
+				params.hostname,
+				params.kafkaServers);
 
 		Properties cfg = new Properties();
 
@@ -382,7 +389,12 @@ public class KafkaNexmarkGenerator {
 				}
 				double end = System.nanoTime();
 				double diff = end - startNs;
-				LOG.info("{} is finished in {} msec with an overall throughput of {}", name, diff / 1_000_000, (sentBytes * 1_000_000_000.0) / (diff * ONE_GIGABYTE));
+				LOG.info("{} is finished after {} msec  and {} GBs and {} items with an overall throughput of {}",
+						name,
+						diff / 1_000_000,
+						sentBytes / ONE_GIGABYTE,
+						recordsToGenerate,
+						(sentBytes * 1_000_000_000.0) / (diff * ONE_GIGABYTE));
 			} catch (Throwable error) {
 				LOG.error("Error: {}", error);
 			} finally {
