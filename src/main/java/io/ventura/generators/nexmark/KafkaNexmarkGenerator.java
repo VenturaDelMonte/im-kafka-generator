@@ -30,6 +30,7 @@ import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicLongArray;
 
 public class KafkaNexmarkGenerator {
 
@@ -101,6 +102,10 @@ public class KafkaNexmarkGenerator {
 		AUCTIONS_PARTITIONS_RANGES.put(new String(RandomStrings.RANDOM_STRINGS_NAME[0]), null); // DO NOT REMOVE! This is needed to init RandomStrings from the main thread first
 	}
 
+	private static final AtomicLong currentPersonId = new AtomicLong();
+	private static final AtomicLong currentAuctionId = new AtomicLong();
+
+
 	public static void main(String[] args) {
 
 		GeneratorParameters params = new GeneratorParameters();
@@ -138,19 +143,40 @@ public class KafkaNexmarkGenerator {
 		int[] partitionsPersons = PERSONS_PARTITIONS_RANGES.get(params.hostname + "-" + params.personsPartition);
 		int[] partitionsAuctions = AUCTIONS_PARTITIONS_RANGES.get(params.hostname + "-" + params.auctionsPartition);
 
+		HashMap<String, Long> helper = new HashMap<>();
+
+		helper.put("cloud-14", 0l);
+		helper.put("cloud-23", 1l);
+		helper.put("cloud-24", 2l);
+		helper.put("cloud-25", 3l);
+		helper.put("cloud-33", 4l);
+
+		helper.put("localhost", 4L);
+
+		long stride = Long.MAX_VALUE / 5L - 1L;
+		long a = Long.MAX_VALUE;
+		long personStart = stride * helper.get(params.hostname);
+		long personEnd = personStart + stride;
+
+		long auctionStart = stride * helper.get(params.hostname);
+		long auctionEnd = auctionStart + stride;
+
+		currentAuctionId.set(auctionStart);
+		currentPersonId.set(personStart);
+
 		try {
 			CountDownLatch controller = new CountDownLatch(params.personsWorkers + params.auctionsWorkers);
 			CountDownLatch fairStarter = new CountDownLatch(1);
 			for (int j = 0; j < params.personsWorkers; j++) {
 				Properties workerConfig = (Properties) cfg.clone();
 				workerConfig.put(ProducerConfig.CLIENT_ID_CONFIG, "nexmarkPersonsGen-" + j);
-				workers.submit(new PersonsGenerator(j, params.hostname, partitionsPersons, new KafkaProducer<>(workerConfig), params.inputSizeItemsPersons, controller, fairStarter, params.desiredPersonsThroughputKBSec));
+				workers.submit(new PersonsGenerator(j, params.hostname, partitionsPersons, new KafkaProducer<>(workerConfig), params.inputSizeItemsPersons, controller, fairStarter, params.desiredPersonsThroughputKBSec, personStart, personEnd));
 			}
 
 			for (int j = 0; j < params.auctionsWorkers; j++) {
 				Properties workerConfig = (Properties) cfg.clone();
 				workerConfig.put(ProducerConfig.CLIENT_ID_CONFIG, "nexmarkAuctiosGen-" + j);
-				workers.submit(new AuctionsGenerator(j, params.hostname, partitionsAuctions, new KafkaProducer<>(workerConfig), params.inputSizeItemsAuctions, controller, fairStarter, params.desiredAuctionsThroughputKBSec));
+				workers.submit(new AuctionsGenerator(j, params.hostname, partitionsAuctions, new KafkaProducer<>(workerConfig), params.inputSizeItemsAuctions, controller, fairStarter, params.desiredAuctionsThroughputKBSec, auctionStart, auctionEnd));
 			}
 			fairStarter.countDown();
 			controller.await();
@@ -173,17 +199,17 @@ public class KafkaNexmarkGenerator {
 	private final static int PERSON_RECORD_SIZE = 206;
 	private final static int AUCTION_RECORD_SIZE = 269;
 
-	private static final AtomicLong currentPersonId = new AtomicLong();
-	private static final AtomicLong currentAuctionId = new AtomicLong();
-
 	public static class AuctionsGenerator extends AbstractGenerator {
 
 		private static final int MAX_AUCTION_LENGTH_MSEC = 24 * 60 * 60 * 1_000; // 24 hours
 		private static final int MIN_AUCTION_LENGTH_MSEC = 2 * 60 * 60 * 1_000; // 2 hours
 
+		private final long start, end;
 
-		AuctionsGenerator(int workerId, String hostname, int[] partitions, KafkaProducer<byte[], ByteBuffer> kafkaProducer, long inputSizeItemsPersons, CountDownLatch controller, CountDownLatch fairStarter, int desiredThroughputMBSec) {
+		AuctionsGenerator(int workerId, String hostname, int[] partitions, KafkaProducer<byte[], ByteBuffer> kafkaProducer, long inputSizeItemsPersons, CountDownLatch controller, CountDownLatch fairStarter, int desiredThroughputMBSec, long start, long end) {
 			super(workerId, AUCTIONS_TOPIC, hostname + ".auctions." + workerId, partitions, kafkaProducer, inputSizeItemsPersons, controller, fairStarter, desiredThroughputMBSec);
+			this.end = end;
+			this.start = start;
 		}
 
 		@Override
@@ -196,10 +222,11 @@ public class KafkaNexmarkGenerator {
 			long currPerson;
 			do {
 				currPerson = currentPersonId.get();
-			} while (currPerson <= 0);
+			} while (currPerson <= start);
 //			long now = System.nanoTime() / 1_000_000;
 			long nowMillis = System.currentTimeMillis();
 			long auctionId = currentAuctionId.getAndIncrement();
+			currentAuctionId.compareAndSet(end, start);
 			long matchingPerson = r.nextLong(currPerson);
 //			OpenAuction curr = new OpenAuction(
 //						now,r.nextInt(1000) + 1,
@@ -234,6 +261,8 @@ public class KafkaNexmarkGenerator {
 
 	public static class PersonsGenerator extends AbstractGenerator {
 
+		private final long start, end;
+
 		PersonsGenerator(
 				int workerId,
 				String hostname,
@@ -242,9 +271,14 @@ public class KafkaNexmarkGenerator {
 				long inputSizeItemsPersons,
 				CountDownLatch controller,
 				 CountDownLatch fairStarter,
-				int desiredThroughputKBSec) {
+				int desiredThroughputKBSec,
+				long start,
+				long end) {
 
 			super(workerId, PERSONS_TOPIC, hostname + ".persons." + workerId, partitions, kafkaProducer, inputSizeItemsPersons, controller, fairStarter, desiredThroughputKBSec);
+
+			this.start = start;
+			this.end = end;
 		}
 
 		@Override
@@ -260,6 +294,7 @@ public class KafkaNexmarkGenerator {
 			int ict = r.nextInt(Countries.NUM_COUNTRIES);
 			int icy = r.nextInt(Cities.NUM_CITIES);
 			buf.putLong(currentPersonId.getAndIncrement()); // 8
+			currentPersonId.compareAndSet(end, start);
 			buf.put(Firstnames.FIRSTNAMES_32[ifn]);
 			for (int j = 0, skip = 32 - Firstnames.FIRSTNAMES_32[ifn].length; j < skip; j++) {
 				buf.put((byte) 0x00);
