@@ -102,7 +102,7 @@ public class KafkaNexmarkGenerator {
 		AUCTIONS_PARTITIONS_RANGES.put(new String(RandomStrings.RANDOM_STRINGS_NAME[0]), null); // DO NOT REMOVE! This is needed to init RandomStrings from the main thread first
 	}
 
-	private static final AtomicLong currentPersonId = new AtomicLong();
+	private static final AtomicLong currentPersonId = new AtomicLong(-1);
 	private static final AtomicLong currentAuctionId = new AtomicLong();
 
 
@@ -222,12 +222,11 @@ public class KafkaNexmarkGenerator {
 			long currPerson;
 			do {
 				currPerson = currentPersonId.get();
-			} while (currPerson <= start);
+			} while (currPerson <= 0);
 //			long now = System.nanoTime() / 1_000_000;
 			long nowMillis = System.currentTimeMillis();
-			long auctionId = currentAuctionId.getAndIncrement();
-			currentAuctionId.compareAndSet(end, start);
-			long matchingPerson = r.nextLong(currPerson);
+			long auctionId = r.nextLong(start, end);
+			long matchingPerson = r.nextLong(start, currPerson);
 //			OpenAuction curr = new OpenAuction(
 //						now,r.nextInt(1000) + 1,
 //						now + r.nextInt(MAX_AUCTION_LENGTH_MSEC) + MIN_AUCTION_LENGTH_MSEC);
@@ -293,8 +292,14 @@ public class KafkaNexmarkGenerator {
 			int iem = r.nextInt(Emails.NUM_EMAILS);
 			int ict = r.nextInt(Countries.NUM_COUNTRIES);
 			int icy = r.nextInt(Cities.NUM_CITIES);
-			buf.putLong(currentPersonId.getAndIncrement()); // 8
-			currentPersonId.compareAndSet(end, start);
+//			buf.putLong(currentPersonId.getAndIncrement()); // 8
+//			currentPersonId.compareAndSet(end, start);
+			long personId = r.nextLong(start, end);
+			long seenId = currentPersonId.get();
+			if (seenId < personId) {
+				currentPersonId.set(personId);
+			}
+			buf.putLong(personId);
 			buf.put(Firstnames.FIRSTNAMES_32[ifn]);
 			for (int j = 0, skip = 32 - Firstnames.FIRSTNAMES_32[ifn].length; j < skip; j++) {
 				buf.put((byte) 0x00);
