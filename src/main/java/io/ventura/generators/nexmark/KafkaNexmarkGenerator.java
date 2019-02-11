@@ -151,7 +151,7 @@ public class KafkaNexmarkGenerator {
 		helper.put("cloud-25", 3l);
 		helper.put("cloud-33", 4l);
 
-		helper.put("localhost", 4L);
+		helper.put("localhost", 3L);
 
 		long stride = Long.MAX_VALUE / 5L - 1L;
 		long a = Long.MAX_VALUE;
@@ -161,8 +161,8 @@ public class KafkaNexmarkGenerator {
 		long auctionStart = stride * helper.get(params.hostname);
 		long auctionEnd = auctionStart + stride;
 
-		currentAuctionId.set(auctionStart);
-		currentPersonId.set(personStart);
+		currentAuctionId.set(-1);
+		currentPersonId.set(-1);
 
 		try {
 			CountDownLatch controller = new CountDownLatch(params.personsWorkers + params.auctionsWorkers);
@@ -226,7 +226,7 @@ public class KafkaNexmarkGenerator {
 //			long now = System.nanoTime() / 1_000_000;
 			long nowMillis = System.currentTimeMillis();
 			long auctionId = r.nextLong(start, end);
-			long matchingPerson = r.nextLong(start, currPerson);
+			long matchingPerson = r.nextLong(currPerson);
 //			OpenAuction curr = new OpenAuction(
 //						now,r.nextInt(1000) + 1,
 //						now + r.nextInt(MAX_AUCTION_LENGTH_MSEC) + MIN_AUCTION_LENGTH_MSEC);
