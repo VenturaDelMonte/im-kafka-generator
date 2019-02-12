@@ -103,11 +103,8 @@ public class KafkaNexmarkGenerator {
 		AUCTIONS_PARTITIONS_RANGES.put(new String(RandomStrings.RANDOM_STRINGS_NAME[0]), null); // DO NOT REMOVE! This is needed to init RandomStrings from the main thread first
 	}
 
-	private static final AtomicLong currentPersonId = new AtomicLong(-1);
-	private static final AtomicLong currentAuctionId = new AtomicLong();
-
 	private static final long MAX_PERSON_ID = 260_000_000L;
-	private static final long MAX_AUCTION_ID = 4_500_000_000L;
+	private static final long MAX_AUCTION_ID = 20_000_000_000L;
 
 	public static void main(String[] args) {
 
@@ -164,23 +161,30 @@ public class KafkaNexmarkGenerator {
 		long auctionStart = auctionStride * helper.get(params.hostname);
 		long auctionEnd = auctionStart + auctionStride;
 
-		currentAuctionId.set(-1);
-		currentPersonId.set(-1);
-
 		try {
+			CountDownLatch starter = new CountDownLatch(params.personsWorkers + params.auctionsWorkers);
 			CountDownLatch controller = new CountDownLatch(params.personsWorkers + params.auctionsWorkers);
 			CountDownLatch fairStarter = new CountDownLatch(1);
+			AtomicLongArray personsUpperBound = new AtomicLongArray(params.auctionsWorkers);
+			long threadStridePerson = (personEnd - personStart) / params.personsWorkers;
+			long threadStrideAuction = (auctionEnd - auctionStart) / params.personsWorkers;
 			for (int j = 0; j < params.personsWorkers; j++) {
 				Properties workerConfig = (Properties) cfg.clone();
 				workerConfig.put(ProducerConfig.CLIENT_ID_CONFIG, "nexmarkPersonsGen-" + j);
-				workers.submit(new PersonsGenerator(j, params.hostname, partitionsPersons, new KafkaProducer<>(workerConfig), params.inputSizeItemsPersons, controller, fairStarter, params.desiredPersonsThroughputKBSec, personStart, personEnd));
+				personsUpperBound.set(j, -1L);
+				long start = threadStridePerson * j;
+				long end = start + threadStridePerson;
+				workers.submit(new PersonsGenerator(j, params.hostname, partitionsPersons, new KafkaProducer<>(workerConfig), params.inputSizeItemsPersons, starter, controller, fairStarter, params.desiredPersonsThroughputKBSec, start, end, personsUpperBound));
 			}
 
 			for (int j = 0; j < params.auctionsWorkers; j++) {
 				Properties workerConfig = (Properties) cfg.clone();
 				workerConfig.put(ProducerConfig.CLIENT_ID_CONFIG, "nexmarkAuctiosGen-" + j);
-				workers.submit(new AuctionsGenerator(j, params.hostname, partitionsAuctions, new KafkaProducer<>(workerConfig), params.inputSizeItemsAuctions, controller, fairStarter, params.desiredAuctionsThroughputKBSec, auctionStart, auctionEnd));
+				long start = threadStrideAuction * j;
+				long end = start + threadStridePerson;
+				workers.submit(new AuctionsGenerator(j, params.hostname, partitionsAuctions, new KafkaProducer<>(workerConfig), params.inputSizeItemsAuctions, starter, controller, fairStarter, params.desiredAuctionsThroughputKBSec, start, end, personsUpperBound));
 			}
+			starter.await();
 			fairStarter.countDown();
 			controller.await();
 			workers.shutdown();
@@ -209,10 +213,28 @@ public class KafkaNexmarkGenerator {
 
 		private final long minAuctionId, maxAuctionId;
 
-		AuctionsGenerator(int workerId, String hostname, int[] partitions, KafkaProducer<byte[], ByteBuffer> kafkaProducer, long inputSizeItemsPersons, CountDownLatch controller, CountDownLatch fairStarter, int desiredThroughputMBSec, long start, long end) {
-			super(workerId, AUCTIONS_TOPIC, hostname + ".auctions." + workerId, partitions, kafkaProducer, inputSizeItemsPersons, controller, fairStarter, desiredThroughputMBSec);
+		private long currentIndex;
+
+		private final AtomicLongArray personsUpperBound;
+
+		AuctionsGenerator(
+				int workerId,
+				String hostname,
+				int[] partitions,
+				KafkaProducer<byte[], ByteBuffer> kafkaProducer,
+				long inputSizeItemsPersons,
+				CountDownLatch starter,
+				CountDownLatch controller,
+				CountDownLatch fairStarter,
+				int desiredThroughputMBSec,
+				long start,
+				long end,
+				AtomicLongArray personsUpperBound) {
+			super(workerId, AUCTIONS_TOPIC, hostname + ".auctions." + workerId, partitions, kafkaProducer, inputSizeItemsPersons, starter, controller, fairStarter, desiredThroughputMBSec);
 			this.minAuctionId = start;
 			this.maxAuctionId = end;
+			this.currentIndex = start;
+			this.personsUpperBound = personsUpperBound;
 		}
 
 		@Override
@@ -221,14 +243,17 @@ public class KafkaNexmarkGenerator {
 		}
 
 		@Override
-		public void writeItem(ThreadLocalFixedSeedRandom r, ByteBuffer buf) {
+		public void writeItem(long itemId, ThreadLocalFixedSeedRandom r, ByteBuffer buf) {
 			long currPerson;
 			do {
-				currPerson = currentPersonId.get();
+				currPerson = personsUpperBound.get(this.workerId);
 			} while (currPerson <= 0);
 //			long now = System.nanoTime() / 1_000_000;
 			long nowMillis = System.currentTimeMillis();
-			long auctionId = r.nextLong(minAuctionId, maxAuctionId);
+			if (currentIndex == maxAuctionId) {
+				currentIndex = minAuctionId;
+			}
+			long auctionId = currentIndex++;//r.nextLong(minAuctionId, maxAuctionId);
 			long matchingPerson = r.nextLong(currPerson);
 //			OpenAuction curr = new OpenAuction(
 //						now,r.nextInt(1000) + 1,
@@ -265,22 +290,32 @@ public class KafkaNexmarkGenerator {
 
 		private final long minPersonId, maxPersonId;
 
+		private long currentIndex, maxSoFar;
+
+		private long minIndexSoFar;
+
+		private final AtomicLongArray personUpperBound;
+
 		PersonsGenerator(
 				int workerId,
 				String hostname,
 				int[] partitions,
 				KafkaProducer<byte[], ByteBuffer> kafkaProducer,
 				long inputSizeItemsPersons,
+				CountDownLatch starter,
 				CountDownLatch controller,
-				 CountDownLatch fairStarter,
+				CountDownLatch fairStarter,
 				int desiredThroughputKBSec,
 				long start,
-				long end) {
+				long end,
+				AtomicLongArray personUpperBound) {
 
-			super(workerId, PERSONS_TOPIC, hostname + ".persons." + workerId, partitions, kafkaProducer, inputSizeItemsPersons, controller, fairStarter, desiredThroughputKBSec);
+			super(workerId, PERSONS_TOPIC, hostname + ".persons." + workerId, partitions, kafkaProducer, inputSizeItemsPersons, starter, controller, fairStarter, desiredThroughputKBSec);
 
+			this.personUpperBound = personUpperBound;
 			this.minPersonId = start;
 			this.maxPersonId = end;
+			this.currentIndex = this.maxSoFar = this.minIndexSoFar = start;
 		}
 
 		@Override
@@ -289,7 +324,7 @@ public class KafkaNexmarkGenerator {
 		}
 
 		@Override
-		public void writeItem(ThreadLocalFixedSeedRandom r, ByteBuffer buf) {
+		public void writeItem(long itemId, ThreadLocalFixedSeedRandom r, ByteBuffer buf) {
 			int ifn = r.nextInt(Firstnames.NUM_FIRSTNAMES);
 			int iln = r.nextInt(Lastnames.NUM_LASTNAMES);
 			int iem = r.nextInt(Emails.NUM_EMAILS);
@@ -297,11 +332,15 @@ public class KafkaNexmarkGenerator {
 			int icy = r.nextInt(Cities.NUM_CITIES);
 //			buf.putLong(currentPersonId.getAndIncrement()); // 8
 //			currentPersonId.compareAndSet(end, start);
-			long personId = r.nextLong(minPersonId, maxPersonId);
-			long seenId = currentPersonId.get();
-			if (seenId < personId) {
-				currentPersonId.lazySet(personId);
+			long personId = r.nextLong(minIndexSoFar, ++currentIndex);
+			maxSoFar = Math.max(currentIndex, maxSoFar);
+			if (currentIndex % 1_000 == 0) {
+				minIndexSoFar++;
 			}
+			if (currentIndex == maxPersonId) {
+				minIndexSoFar = currentIndex = minPersonId;
+			}
+			personUpperBound.lazySet(workerId, maxSoFar);
 			buf.putLong(personId);
 			buf.put(Firstnames.FIRSTNAMES_32[ifn]);
 			for (int j = 0, skip = 32 - Firstnames.FIRSTNAMES_32[ifn].length; j < skip; j++) {
@@ -341,12 +380,13 @@ public class KafkaNexmarkGenerator {
 
 	public static abstract class AbstractGenerator implements Runnable {
 
+		protected final int workerId;
 		private final String name, topicName;
 		private final byte[] genId;
 		private final int targetPartition;
 		private final long inputSizeItemsPersons;
 		private final KafkaProducer<byte[], ByteBuffer> kafkaProducer;
-		private final CountDownLatch controller;
+		private final CountDownLatch controller, starter;
 		private final long desiredThroughputBytesPerSecond;
 		private final CountDownLatch fairStarter;
 
@@ -358,12 +398,15 @@ public class KafkaNexmarkGenerator {
 				int[] partitions,
 				KafkaProducer<byte[], ByteBuffer> kafkaProducer,
 				long inputSizeItemsPersons,
+				CountDownLatch starter,
 				CountDownLatch controller,
 				CountDownLatch fairStarter,
 				int desiredThroughputKBSec) {
 			this.inputSizeItemsPersons = inputSizeItemsPersons * ONE_GIGABYTE;
+			this.workerId = workerId;
 			this.kafkaProducer = kafkaProducer;
 			this.controller = controller;
+			this.starter = starter;
 			this.topicName = topicName;
 			this.genId = new byte[4 + 4 + 8];
 			this.targetPartition = partitions[workerId];
@@ -378,7 +421,7 @@ public class KafkaNexmarkGenerator {
 
 		public abstract int itemSize();
 
-		public abstract void writeItem(ThreadLocalFixedSeedRandom r, ByteBuffer buf);
+		public abstract void writeItem(long itemId, ThreadLocalFixedSeedRandom r, ByteBuffer buf);
 
 		public abstract int genChecksum();
 
@@ -413,6 +456,7 @@ public class KafkaNexmarkGenerator {
 
 				AtomicLong sharedCounter = new AtomicLong();
 
+				starter.countDown();
 				fairStarter.await();
 
 				future = executor.scheduleAtFixedRate(new ThroughtputLogger(sharedCounter, name, 5, itemSize()), 5, 5, TimeUnit.SECONDS);
@@ -436,7 +480,7 @@ public class KafkaNexmarkGenerator {
 					buf.putInt(itemsInThisBuffer);
 					buf.putLong(backlog);
 					for (int k = 0; k < itemsInThisBuffer && i < recordsToGenerate; k++, i++, pending--) {
-						writeItem(randomness, buf);
+						writeItem(i, randomness, buf);
 					}
 					buf.position(buf.position() + buf.remaining());
 					ProducerRecord<byte[], ByteBuffer> kafkaRecord = new ProducerRecord<>(topicName, targetPartition, genId, buf);
@@ -461,7 +505,7 @@ public class KafkaNexmarkGenerator {
 				}
 				double end = System.nanoTime();
 				double diff = end - startNs;
-				LOG.info("{} is finished after {} msec  and {} GBs and {} items with an overall throughput of {}",
+				LOG.info("{} is finished after {} msec and {} GBs and {} items with an overall throughput of {}",
 						name,
 						diff / 1_000_000,
 						sentBytes / ONE_GIGABYTE,
