@@ -106,6 +106,8 @@ public class KafkaNexmarkGenerator {
 	private static final AtomicLong currentPersonId = new AtomicLong(-1);
 	private static final AtomicLong currentAuctionId = new AtomicLong();
 
+	private static final long MAX_PERSON_ID = 260_000_000L;
+	private static final long MAX_AUCTION_ID = 4_500_000_000L;
 
 	public static void main(String[] args) {
 
@@ -154,13 +156,13 @@ public class KafkaNexmarkGenerator {
 
 		helper.put("localhost", 3L);
 
-		long stride = Long.MAX_VALUE / 5L - 1L;
-		long a = Long.MAX_VALUE;
-		long personStart = stride * helper.get(params.hostname);
-		long personEnd = personStart + stride;
+		long personStride = MAX_PERSON_ID / 5L;
+		long personStart = personStride * helper.get(params.hostname);
+		long personEnd = personStart + personStride;
 
-		long auctionStart = stride * helper.get(params.hostname);
-		long auctionEnd = auctionStart + stride;
+		long auctionStride = MAX_AUCTION_ID / 5L;
+		long auctionStart = auctionStride * helper.get(params.hostname);
+		long auctionEnd = auctionStart + auctionStride;
 
 		currentAuctionId.set(-1);
 		currentPersonId.set(-1);
@@ -205,12 +207,12 @@ public class KafkaNexmarkGenerator {
 		private static final int MAX_AUCTION_LENGTH_MSEC = 24 * 60 * 60 * 1_000; // 24 hours
 		private static final int MIN_AUCTION_LENGTH_MSEC = 2 * 60 * 60 * 1_000; // 2 hours
 
-		private final long start, end;
+		private final long minAuctionId, maxAuctionId;
 
 		AuctionsGenerator(int workerId, String hostname, int[] partitions, KafkaProducer<byte[], ByteBuffer> kafkaProducer, long inputSizeItemsPersons, CountDownLatch controller, CountDownLatch fairStarter, int desiredThroughputMBSec, long start, long end) {
 			super(workerId, AUCTIONS_TOPIC, hostname + ".auctions." + workerId, partitions, kafkaProducer, inputSizeItemsPersons, controller, fairStarter, desiredThroughputMBSec);
-			this.end = end;
-			this.start = start;
+			this.minAuctionId = start;
+			this.maxAuctionId = end;
 		}
 
 		@Override
@@ -226,7 +228,7 @@ public class KafkaNexmarkGenerator {
 			} while (currPerson <= 0);
 //			long now = System.nanoTime() / 1_000_000;
 			long nowMillis = System.currentTimeMillis();
-			long auctionId = r.nextLong(start, end);
+			long auctionId = r.nextLong(minAuctionId, maxAuctionId);
 			long matchingPerson = r.nextLong(currPerson);
 //			OpenAuction curr = new OpenAuction(
 //						now,r.nextInt(1000) + 1,
@@ -261,7 +263,7 @@ public class KafkaNexmarkGenerator {
 
 	public static class PersonsGenerator extends AbstractGenerator {
 
-		private final long start, end;
+		private final long minPersonId, maxPersonId;
 
 		PersonsGenerator(
 				int workerId,
@@ -277,8 +279,8 @@ public class KafkaNexmarkGenerator {
 
 			super(workerId, PERSONS_TOPIC, hostname + ".persons." + workerId, partitions, kafkaProducer, inputSizeItemsPersons, controller, fairStarter, desiredThroughputKBSec);
 
-			this.start = start;
-			this.end = end;
+			this.minPersonId = start;
+			this.maxPersonId = end;
 		}
 
 		@Override
@@ -295,10 +297,10 @@ public class KafkaNexmarkGenerator {
 			int icy = r.nextInt(Cities.NUM_CITIES);
 //			buf.putLong(currentPersonId.getAndIncrement()); // 8
 //			currentPersonId.compareAndSet(end, start);
-			long personId = r.nextLong(start, end);
+			long personId = r.nextLong(minPersonId, maxPersonId);
 			long seenId = currentPersonId.get();
 			if (seenId < personId) {
-				currentPersonId.set(personId);
+				currentPersonId.lazySet(personId);
 			}
 			buf.putLong(personId);
 			buf.put(Firstnames.FIRSTNAMES_32[ifn]);
@@ -442,10 +444,11 @@ public class KafkaNexmarkGenerator {
 					kafkaProducer.send(kafkaRecord, new InternalCallback(cachedBuffers, buf, sharedCounter, itemsPerBuffer));
 					sentBytes += BUFFER_SIZE;
 					sentItems += itemsPerBuffer;
-					long nowMs = System.nanoTime() / 1_000_000;
+//					long nowMs = System.nanoTime() / 1_000_000;
 //					throughputThrottler.throttleIfNeeded(sentBytes, nowMs);
 					sentBytesDelta += BUFFER_SIZE;
 					if (sentBytesDelta > LOGGING_THRESHOLD) {
+						long nowMs = System.nanoTime() / 1_000_000;
 						LOG.info("{} has just sent {} MB to kafka in {}",
 								name,
 								sentBytes / ONE_MEGABYTE,
