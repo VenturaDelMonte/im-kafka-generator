@@ -1,6 +1,7 @@
 package io.ventura.generators.nexmark;
 
 import com.beust.jcommander.JCommander;
+import com.google.common.util.concurrent.RateLimiter;
 import io.ventura.generators.nexmark.original.Cities;
 import io.ventura.generators.nexmark.original.Countries;
 import io.ventura.generators.nexmark.original.Emails;
@@ -417,8 +418,10 @@ public class KafkaNexmarkGenerator {
 				double startNs = System.nanoTime();
 				long sentBytes = 0;
 				long sentItems = 0;
-				ThroughputThrottler throughputThrottler = new ThroughputThrottler(desiredThroughputBytesPerSecond, ((long) startNs) / 1_000_000);
+//				ThroughputThrottler throughputThrottler = new ThroughputThrottler(desiredThroughputBytesPerSecond, ((long) startNs) / 1_000_000);
 				ThreadLocalFixedSeedRandom randomness = ThreadLocalFixedSeedRandom.current();
+
+				RateLimiter throughputThrottler = RateLimiter.create(desiredThroughputBytesPerSecond);
 				int chk = genChecksum();
 
 				long pending = recordsToGenerate;
@@ -435,11 +438,12 @@ public class KafkaNexmarkGenerator {
 					}
 					buf.position(buf.position() + buf.remaining());
 					ProducerRecord<byte[], ByteBuffer> kafkaRecord = new ProducerRecord<>(topicName, targetPartition, genId, buf);
+					throughputThrottler.acquire(BUFFER_SIZE);
 					kafkaProducer.send(kafkaRecord, new InternalCallback(cachedBuffers, buf, sharedCounter, itemsPerBuffer));
 					sentBytes += BUFFER_SIZE;
 					sentItems += itemsPerBuffer;
 					long nowMs = System.nanoTime() / 1_000_000;
-					throughputThrottler.throttleIfNeeded(sentBytes, nowMs);
+//					throughputThrottler.throttleIfNeeded(sentBytes, nowMs);
 					sentBytesDelta += BUFFER_SIZE;
 					if (sentBytesDelta > LOGGING_THRESHOLD) {
 						LOG.info("{} has just sent {} MB to kafka in {}",
