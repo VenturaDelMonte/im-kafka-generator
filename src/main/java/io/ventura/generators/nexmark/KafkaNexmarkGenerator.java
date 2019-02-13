@@ -547,7 +547,7 @@ public class KafkaNexmarkGenerator {
 					} else {
 						auctionsGenerator.writeItem(eventId, timestamp, randomness, bufA);
 						pendingAuctions--;
-						if (bufA.remaining() < personSize) {
+						if (bufA.remaining() < auctionSize) {
 							bufA.position(bufA.position() + bufA.remaining());
 							ProducerRecord<byte[], ByteBuffer> kafkaRecord = new ProducerRecord<>(topicNameAuction, targetPartition, genId, bufA);
 							throughputThrottler.acquire(BUFFER_SIZE);
