@@ -528,6 +528,7 @@ public class KafkaNexmarkGenerator {
 					long rem = eventId % TOTAL_EVENT_RATIO;
 					if (rem < PERSON_EVENT_RATIO) {
 						personsGenerator.writeItem(eventId, timestamp, randomness, bufP);
+						pendingPerson--;
 						if (bufP.remaining() < personSize) {
 							bufP.position(bufP.position() + bufP.remaining());
 							ProducerRecord<byte[], ByteBuffer> kafkaRecord = new ProducerRecord<>(topicNamePerson, targetPartition, genId, bufP);
@@ -545,6 +546,7 @@ public class KafkaNexmarkGenerator {
 						}
 					} else {
 						auctionsGenerator.writeItem(eventId, timestamp, randomness, bufA);
+						pendingAuctions--;
 						if (bufA.remaining() < personSize) {
 							bufA.position(bufA.position() + bufA.remaining());
 							ProducerRecord<byte[], ByteBuffer> kafkaRecord = new ProducerRecord<>(topicNameAuction, targetPartition, genId, bufA);
