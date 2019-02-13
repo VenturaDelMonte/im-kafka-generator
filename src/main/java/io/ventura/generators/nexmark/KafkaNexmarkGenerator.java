@@ -352,6 +352,7 @@ public class KafkaNexmarkGenerator {
 			long diff = timestamp - lastMinUpdateTimestamp;
 			if (diff > (15L * 1_000_000_000L)) {
 				minIndexSoFar++;
+				lastMinUpdateTimestamp = timestamp;
 			}
 			if (currentIndex == maxPersonId) {
 				minIndexSoFar = currentIndex = minPersonId;
