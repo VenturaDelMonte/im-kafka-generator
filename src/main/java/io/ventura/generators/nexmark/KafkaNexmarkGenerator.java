@@ -554,7 +554,7 @@ public class KafkaNexmarkGenerator {
 							kafkaProducerAuctions.send(kafkaRecord, new InternalCallback(cachedBuffers, bufA, sharedCounterAuction, itemsInThisBufferA));
 							sentAuctions += itemsInThisBufferA;
 							bufA = cachedBuffers.take();
-							bufA.putInt(chkP);
+							bufA.putInt(chkA);
 							itemsInThisBufferA = (int) Math.min(itemsPerBufferAuction, pendingAuctions);
 							backlogAuction = pendingAuctions - itemsInThisBufferA;
 							bufA.putInt(itemsInThisBufferA);
