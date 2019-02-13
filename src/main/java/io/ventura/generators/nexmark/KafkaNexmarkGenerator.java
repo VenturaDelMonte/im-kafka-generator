@@ -190,8 +190,8 @@ public class KafkaNexmarkGenerator {
 
 				GeneratorRunner runner = new GeneratorRunner(
 						j,
-						"nexmarkPersonsGen-" + j,
-						"nexmarkAuctiosGen-" + j,
+						PERSONS_TOPIC,
+						AUCTIONS_TOPIC,
 						params.hostname,
 						partitionsPersons,
 						a,
@@ -491,8 +491,8 @@ public class KafkaNexmarkGenerator {
 				starter.countDown();
 				fairStarter.await();
 
-				futureP = executor.scheduleAtFixedRate(new ThroughtputLogger(sharedCounterPerson, name, topicNamePerson, 5, personSize), 5, 5, TimeUnit.SECONDS);
-				futureA = executor.scheduleAtFixedRate(new ThroughtputLogger(sharedCounterAuction, name, topicNameAuction,5, auctionSize), 6, 5, TimeUnit.SECONDS);
+				futureP = executor.scheduleAtFixedRate(new ThroughtputLogger(sharedCounterPerson, name, topicNamePerson + "-" + workerId, 5, personSize), 5, 5, TimeUnit.SECONDS);
+				futureA = executor.scheduleAtFixedRate(new ThroughtputLogger(sharedCounterAuction, name, topicNameAuction + "-" + workerId,5, auctionSize), 6, 5, TimeUnit.SECONDS);
 
 				double startNs = System.nanoTime();
 				long sentBytes = 0;
