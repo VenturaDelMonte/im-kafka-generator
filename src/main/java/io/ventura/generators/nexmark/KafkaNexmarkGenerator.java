@@ -1,6 +1,7 @@
 package io.ventura.generators.nexmark;
 
 import com.beust.jcommander.JCommander;
+import com.google.common.base.Preconditions;
 import com.google.common.util.concurrent.RateLimiter;
 import io.ventura.generators.nexmark.original.Cities;
 import io.ventura.generators.nexmark.original.Countries;
@@ -188,12 +189,14 @@ public class KafkaNexmarkGenerator {
 				KafkaProducer<byte[], ByteBuffer> kafkaProducerPersons = new KafkaProducer<>(workerConfigPerson);
 				KafkaProducer<byte[], ByteBuffer> kafkaProducerAuctions = new KafkaProducer<>(workerConfigAuction);
 
+				int targetPartition = partitionsPersons[j];
+
 				GeneratorRunner runner = new GeneratorRunner(
 						j,
 						PERSONS_TOPIC,
 						AUCTIONS_TOPIC,
 						params.hostname,
-						partitionsPersons,
+						targetPartition,
 						a,
 						p,
 						kafkaProducerPersons,
@@ -409,7 +412,7 @@ public class KafkaNexmarkGenerator {
 				String topicNamePerson,
 				String topicNameAuction,
 				String name,
-				int[] partitions,
+				int targetPartition,
 				AuctionsGenerator auctionsGenerator,
 				PersonsGenerator personsGenerator,
 				KafkaProducer<byte[], ByteBuffer> kafkaProducerPersons,
@@ -430,7 +433,7 @@ public class KafkaNexmarkGenerator {
 			this.starter = starter;
 			this.topicNamePerson = topicNamePerson;
 			this.genId = new byte[4 + 4 + 8];
-			this.targetPartition = partitions[workerId / 2];
+			this.targetPartition = targetPartition;
 			this.name = name;
 			this.fairStarter = fairStarter;
 			this.desiredThroughputBytesPerSecond = ONE_KILOBYTE * desiredThroughputKBSec;
@@ -521,6 +524,9 @@ public class KafkaNexmarkGenerator {
 				long sentPersons = 0;
 				long sentAuctions = 0;
 				long eventId = 0;
+
+				long prevBP = backlogPerson;
+				long prevBA = backlogAuction;
 				for (; eventId < recordsToGenerate; eventId++) {
 
 					long timestamp = System.nanoTime();
@@ -539,6 +545,7 @@ public class KafkaNexmarkGenerator {
 							bufP.putInt(chkP);
 							itemsInThisBufferP = (int) Math.min(itemsPerBufferPerson, pendingPerson);
 							backlogPerson = pendingPerson - itemsInThisBufferP;
+							Preconditions.checkArgument(backlogPerson < prevBP);
 							bufP.putInt(itemsInThisBufferP);
 							bufP.putLong(backlogPerson);
 							sentBytes += BUFFER_SIZE;
@@ -557,6 +564,7 @@ public class KafkaNexmarkGenerator {
 							bufA.putInt(chkA);
 							itemsInThisBufferA = (int) Math.min(itemsPerBufferAuction, pendingAuctions);
 							backlogAuction = pendingAuctions - itemsInThisBufferA;
+							Preconditions.checkArgument(backlogAuction < prevBA);
 							bufA.putInt(itemsInThisBufferA);
 							bufA.putLong(backlogAuction);
 							sentBytes += BUFFER_SIZE;
