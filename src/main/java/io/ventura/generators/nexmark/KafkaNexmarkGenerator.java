@@ -182,7 +182,6 @@ public class KafkaNexmarkGenerator {
 				long startA = threadStrideAuction * j;
 				long endA = startA + threadStrideAuction;
 
-
 				PersonsGenerator p = new PersonsGenerator(startP, endP);
 				AuctionsGenerator a = new AuctionsGenerator(startA, endA, startP);
 
@@ -293,8 +292,8 @@ public class KafkaNexmarkGenerator {
 			}
 
 			long personId = epoch * PERSON_EVENT_RATIO + offset + 1;
-			long activePersons = Math.min(personId, 10_000);
-			long n = r.nextLong(activePersons + 100);
+			long activePersons = Math.min(personId, 1_000);
+			long n = r.nextLong(activePersons + 10);
 			long matchingPerson = minPersonId + personId + activePersons - n;
 //
 			buf.putLong(auctionId); // 8
@@ -483,7 +482,9 @@ public class KafkaNexmarkGenerator {
 				int auctionSize = auctionsGenerator.itemSize();
 
 				long ratio = targetPartitionSize / TOTAL_EVENT_RATIO;
-				long recordsToGenerate = (PERSON_EVENT_RATIO * ratio) / personSize + (AUCTION_EVENT_RATIO * ratio) / auctionSize;
+				long personsToGenerate = (PERSON_EVENT_RATIO * ratio) / personSize;
+				long auctionsToGenerate = (AUCTION_EVENT_RATIO * ratio) / auctionSize;
+				long recordsToGenerate = personsToGenerate + auctionsToGenerate;
 
 				int itemsPerBufferPerson = (BUFFER_SIZE - METADATA_SIZE) / personSize;
 				int itemsPerBufferAuction = (BUFFER_SIZE - METADATA_SIZE) / auctionSize;
