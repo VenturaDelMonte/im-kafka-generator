@@ -294,7 +294,7 @@ public class KafkaNexmarkGenerator {
 
 			long personId = epoch * PERSON_EVENT_RATIO + offset + 1;
 			long activePersons = Math.min(personId, 10_000);
-			long n = r.nextLong(activePersons);
+			long n = r.nextLong(activePersons + 100);
 			long matchingPerson = minPersonId + personId + activePersons - n;
 //
 			buf.putLong(auctionId); // 8
