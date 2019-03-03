@@ -104,7 +104,7 @@ public class KafkaNexmarkGenerator {
 		AUCTIONS_PARTITIONS_RANGES.put(new String(RandomStrings.RANDOM_STRINGS_NAME[0]), null); // DO NOT REMOVE! This is needed to init RandomStrings from the main thread first
 	}
 
-	private static final long MAX_PERSON_ID = 460_000_000L;
+	private static final long MAX_PERSON_ID = 1_000_000_000L;
 	private static final long MAX_AUCTION_ID = 80_000_000_000L;
 
 	public static void main(String[] args) {
@@ -530,7 +530,7 @@ public class KafkaNexmarkGenerator {
 				long prevBA = backlogAuction;
 				for (; eventId < recordsToGenerate; eventId++) {
 
-					long timestamp = System.nanoTime();
+					final long timestamp = System.nanoTime();
 
 					long rem = eventId % TOTAL_EVENT_RATIO;
 					if (rem < PERSON_EVENT_RATIO) {
