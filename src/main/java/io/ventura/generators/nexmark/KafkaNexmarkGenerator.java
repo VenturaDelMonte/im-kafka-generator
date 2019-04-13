@@ -293,7 +293,7 @@ public class KafkaNexmarkGenerator {
 				offset = PERSON_EVENT_RATIO - 1;
 			}
 			long matchingPerson;
-			if (r.nextLong(AUCTION_EVENT_RATIO) > 1) {
+			if (r.nextInt(100) > 20) {
 				long personId = epoch * PERSON_EVENT_RATIO + offset;
 				matchingPerson = minPersonId + (personId / HOT_SELLER_RATIO) * HOT_SELLER_RATIO;
 			} else {
