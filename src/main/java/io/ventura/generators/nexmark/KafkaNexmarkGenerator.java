@@ -55,23 +55,23 @@ public class KafkaNexmarkGenerator {
 		PERSONS_PARTITIONS_RANGES.put("localhost-2", new int[] { 0, 1});
 
 		PERSONS_PARTITIONS_RANGES.put("cloud-14-32", new int[] { 0, 1, 2, 3, 4, 5, 6, 7 });
-		PERSONS_PARTITIONS_RANGES.put("cloud-23-32", new int[] { 8, 9, 10, 11, 12, 13, 14, 15 });
+		PERSONS_PARTITIONS_RANGES.put("cloud-37-32", new int[] { 8, 9, 10, 11, 12, 13, 14, 15 });
 		PERSONS_PARTITIONS_RANGES.put("cloud-24-32", new int[] { 16, 17, 18, 19, 20, 21, 22, 23 });
 		PERSONS_PARTITIONS_RANGES.put("cloud-25-32", new int[] { 24, 25, 26, 27, 28, 29, 30, 31, 32 });
 
 		PERSONS_PARTITIONS_RANGES.put("cloud-14-40", new int[] { 0, 1, 2, 3, 4, 5, 6, 7 });
-		PERSONS_PARTITIONS_RANGES.put("cloud-23-40", new int[] { 8, 9, 10, 11, 12, 13, 14, 15 });
+		PERSONS_PARTITIONS_RANGES.put("cloud-37-40", new int[] { 8, 9, 10, 11, 12, 13, 14, 15 });
 		PERSONS_PARTITIONS_RANGES.put("cloud-24-40", new int[] { 16, 17, 18, 19, 20, 21, 22, 23 });
 		PERSONS_PARTITIONS_RANGES.put("cloud-25-40", new int[] { 24, 25, 26, 27, 28, 29, 30, 31 });
 		PERSONS_PARTITIONS_RANGES.put("cloud-33-40", new int[] { 32, 33, 34, 35, 36, 37, 38, 39 });
 
 		PERSONS_PARTITIONS_RANGES.put("cloud-14-16", new int[] {  0,  1,  2,  3 });
-		PERSONS_PARTITIONS_RANGES.put("cloud-23-16", new int[] {  4,  5,  6,  7 });
+		PERSONS_PARTITIONS_RANGES.put("cloud-37-16", new int[] {  4,  5,  6,  7 });
 		PERSONS_PARTITIONS_RANGES.put("cloud-24-16", new int[] {  8,  9, 10, 11 });
 		PERSONS_PARTITIONS_RANGES.put("cloud-25-16", new int[] { 12, 13, 14, 15 });
 
 		PERSONS_PARTITIONS_RANGES.put("cloud-14-20", new int[] {  0,  1,  2,  3 });
-		PERSONS_PARTITIONS_RANGES.put("cloud-23-20", new int[] {  4,  5,  6,  7 });
+		PERSONS_PARTITIONS_RANGES.put("cloud-37-20", new int[] {  4,  5,  6,  7 });
 		PERSONS_PARTITIONS_RANGES.put("cloud-24-20", new int[] {  8,  9, 10, 11 });
 		PERSONS_PARTITIONS_RANGES.put("cloud-25-20", new int[] { 12, 13, 14, 15 });
 		PERSONS_PARTITIONS_RANGES.put("cloud-33-20", new int[] { 16, 17, 18, 19 });
@@ -79,24 +79,24 @@ public class KafkaNexmarkGenerator {
 		AUCTIONS_PARTITIONS_RANGES.put("localhost-2", new int[] { 0, 1});
 
 		AUCTIONS_PARTITIONS_RANGES.put("cloud-14-32", new int[] { 0, 1, 2, 3, 4, 5, 6, 7 });
-		AUCTIONS_PARTITIONS_RANGES.put("cloud-23-32", new int[] { 8, 9, 10, 11, 12, 13, 14, 15 });
+		AUCTIONS_PARTITIONS_RANGES.put("cloud-37-32", new int[] { 8, 9, 10, 11, 12, 13, 14, 15 });
 		AUCTIONS_PARTITIONS_RANGES.put("cloud-24-32", new int[] { 16, 17, 18, 19, 20, 21, 22, 23 });
 		AUCTIONS_PARTITIONS_RANGES.put("cloud-25-32", new int[] { 24, 25, 26, 27, 28, 29, 30, 31 });
 
 		AUCTIONS_PARTITIONS_RANGES.put("cloud-14-40", new int[] { 0, 1, 2, 3, 4, 5, 6, 7 });
-		AUCTIONS_PARTITIONS_RANGES.put("cloud-23-40", new int[] { 8, 9, 10, 11, 12, 13, 14, 15 });
+		AUCTIONS_PARTITIONS_RANGES.put("cloud-37-40", new int[] { 8, 9, 10, 11, 12, 13, 14, 15 });
 		AUCTIONS_PARTITIONS_RANGES.put("cloud-24-40", new int[] { 16, 17, 18, 19, 20, 21, 22, 23 });
 		AUCTIONS_PARTITIONS_RANGES.put("cloud-25-40", new int[] { 24, 25, 26, 27, 28, 29, 30, 31 });
 		AUCTIONS_PARTITIONS_RANGES.put("cloud-33-40", new int[] { 32, 33, 34, 35, 36, 37, 38, 39 });
 
 
 		AUCTIONS_PARTITIONS_RANGES.put("cloud-14-16", new int[] {  0,  1,  2,  3 });
-		AUCTIONS_PARTITIONS_RANGES.put("cloud-23-16", new int[] {  4,  5,  6,  7 });
+		AUCTIONS_PARTITIONS_RANGES.put("cloud-37-16", new int[] {  4,  5,  6,  7 });
 		AUCTIONS_PARTITIONS_RANGES.put("cloud-24-16", new int[] {  8,  9, 10, 11 });
 		AUCTIONS_PARTITIONS_RANGES.put("cloud-25-16", new int[] { 12, 13, 14, 15 });
 
 		AUCTIONS_PARTITIONS_RANGES.put("cloud-14-20", new int[] {  0,  1,  2,  3 });
-		AUCTIONS_PARTITIONS_RANGES.put("cloud-23-20", new int[] {  4,  5,  6,  7 });
+		AUCTIONS_PARTITIONS_RANGES.put("cloud-37-20", new int[] {  4,  5,  6,  7 });
 		AUCTIONS_PARTITIONS_RANGES.put("cloud-24-20", new int[] {  8,  9, 10, 11 });
 		AUCTIONS_PARTITIONS_RANGES.put("cloud-25-20", new int[] { 12, 13, 14, 15 });
 		AUCTIONS_PARTITIONS_RANGES.put("cloud-33-20", new int[] { 16, 17, 18, 19 });
@@ -147,7 +147,8 @@ public class KafkaNexmarkGenerator {
 		HashMap<String, Long> helper = new HashMap<>();
 
 		helper.put("cloud-14", 0l);
-		helper.put("cloud-23", 1l);
+		helper.put("cloud-37", 1l);
+		helper.put("cloud-37", 1l);
 		helper.put("cloud-24", 2l);
 		helper.put("cloud-25", 3l);
 		helper.put("cloud-33", 4l);
