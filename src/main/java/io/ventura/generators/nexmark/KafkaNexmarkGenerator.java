@@ -253,6 +253,7 @@ public class KafkaNexmarkGenerator {
 		private static final int MAX_AUCTION_LENGTH_MSEC = 24 * 60 * 60 * 1_000; // 24 hours
 		private static final int MIN_AUCTION_LENGTH_MSEC = 2 * 60 * 60 * 1_000; // 2 hours
 
+		private static final int HOT_SELLER_RATIO = 100;
 		private final long minAuctionId, maxAuctionId;
 		private final long minPersonId;
 
@@ -291,11 +292,16 @@ public class KafkaNexmarkGenerator {
 			if (offset >= PERSON_EVENT_RATIO) {
 				offset = PERSON_EVENT_RATIO - 1;
 			}
-
-			long personId = epoch * PERSON_EVENT_RATIO + offset + 1;
-			long activePersons = Math.min(personId, 10_000);
-			long n = r.nextLong(activePersons + 100);
-			long matchingPerson = minPersonId + personId + activePersons - n;
+			long matchingPerson;
+			if (r.nextLong(AUCTION_EVENT_RATIO) > 1) {
+				long personId = epoch * PERSON_EVENT_RATIO + offset;
+				matchingPerson = minPersonId + (personId / HOT_SELLER_RATIO) * HOT_SELLER_RATIO;
+			} else {
+				long personId = epoch * PERSON_EVENT_RATIO + offset + 1;
+				long activePersons = Math.min(personId, 20_000);
+				long n = r.nextLong(activePersons + 100);
+				matchingPerson = minPersonId + personId + activePersons - n;
+			}
 //
 			buf.putLong(auctionId); // 8
 			buf.putLong(matchingPerson); // 16
