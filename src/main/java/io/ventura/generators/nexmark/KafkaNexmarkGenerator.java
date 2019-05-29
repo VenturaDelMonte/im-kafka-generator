@@ -1,6 +1,7 @@
 package io.ventura.generators.nexmark;
 
 import com.beust.jcommander.JCommander;
+import com.beust.jcommander.internal.Lists;
 import com.google.common.base.Preconditions;
 import com.google.common.util.concurrent.RateLimiter;
 import io.ventura.generators.nexmark.original.Cities;
@@ -20,6 +21,8 @@ import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nonnull;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Properties;
 import java.util.Queue;
@@ -140,17 +143,20 @@ public class KafkaNexmarkGenerator {
 
 		Properties cfg = new Properties();
 
+		int batchSize = params.kafkaBatchSize;
+
 		cfg.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.ByteArraySerializer");
 		cfg.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.ByteBufferSerializer");
 		cfg.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, params.kafkaServers);
 		cfg.put(ProducerConfig.RETRIES_CONFIG, 0);
 		cfg.put(ProducerConfig.BUFFER_MEMORY_CONFIG, params.kafkaBufferMemory);
-		cfg.put(ProducerConfig.BATCH_SIZE_CONFIG, params.kafkaBatchSize);
-		cfg.put(ProducerConfig.ACKS_CONFIG, "all");
+		cfg.put(ProducerConfig.BATCH_SIZE_CONFIG, batchSize * 4);
+		cfg.put(ProducerConfig.ACKS_CONFIG, "0");
 		cfg.put(ProducerConfig.LINGER_MS_CONFIG, "100");
 
 		int[] partitionsPersons = PERSONS_PARTITIONS_RANGES.get(params.hostname + "-" + params.personsPartition);
 		int[] partitionsAuctions = AUCTIONS_PARTITIONS_RANGES.get(params.hostname + "-" + params.auctionsPartition);
+
 
 		HashMap<String, Long> helper = new HashMap<>();
 
@@ -245,7 +251,7 @@ public class KafkaNexmarkGenerator {
 
 	private static final int BUFFER_SIZE = 8192;
 
-	private static final int CACHED_BUFFERS = 8192 * 2;
+	private static final int CACHED_BUFFERS = 8192 * 4;
 
 	private static final int METADATA_SIZE = 4 + 4 + 8;
 
@@ -523,6 +529,7 @@ public class KafkaNexmarkGenerator {
 				ThreadLocalFixedSeedRandom randomness = ThreadLocalFixedSeedRandom.current();
 
 				RateLimiter throughputThrottler = RateLimiter.create(desiredThroughputBytesPerSecond);
+				LOG.debug("Create throughputThrottler for {} -> {} MB/sec", workerId, desiredThroughputBytesPerSecond / (1024 * 1024));
 				int chkP = personsGenerator.genChecksum();
 				int chkA = auctionsGenerator.genChecksum();
 				long pendingPerson = (recordsToGenerate / TOTAL_EVENT_RATIO) * PERSON_EVENT_RATIO;
@@ -549,7 +556,7 @@ public class KafkaNexmarkGenerator {
 				long prevBA = backlogAuction;
 				for (; eventId < recordsToGenerate; eventId++) {
 
-					final long timestamp = System.nanoTime();
+					final long timestamp = System.currentTimeMillis();
 
 					long rem = eventId % TOTAL_EVENT_RATIO;
 					if (rem < PERSON_EVENT_RATIO) {
