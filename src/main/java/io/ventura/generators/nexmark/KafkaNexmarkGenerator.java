@@ -89,7 +89,6 @@ public class KafkaNexmarkGenerator {
 		AUCTIONS_PARTITIONS_RANGES.put("cloud-25-40", new int[] { 24, 25, 26, 27, 28, 29, 30, 31 });
 		AUCTIONS_PARTITIONS_RANGES.put("cloud-33-40", new int[] { 32, 33, 34, 35, 36, 37, 38, 39 });
 
-
 		AUCTIONS_PARTITIONS_RANGES.put("cloud-14-16", new int[] {  0,  1,  2,  3 });
 		AUCTIONS_PARTITIONS_RANGES.put("cloud-37-16", new int[] {  4,  5,  6,  7 });
 		AUCTIONS_PARTITIONS_RANGES.put("cloud-24-16", new int[] {  8,  9, 10, 11 });
@@ -100,6 +99,15 @@ public class KafkaNexmarkGenerator {
 		AUCTIONS_PARTITIONS_RANGES.put("cloud-24-20", new int[] {  8,  9, 10, 11 });
 		AUCTIONS_PARTITIONS_RANGES.put("cloud-25-20", new int[] { 12, 13, 14, 15 });
 		AUCTIONS_PARTITIONS_RANGES.put("cloud-33-20", new int[] { 16, 17, 18, 19 });
+
+
+		// GCP
+		PERSONS_PARTITIONS_RANGES.put("im-generator-01-16", new int[] { 0, 1, 2, 3, 4, 5, 6, 7 });
+		PERSONS_PARTITIONS_RANGES.put("im-generator-02-16", new int[] { 8, 9, 10, 11, 12, 13, 14, 15 });
+
+		AUCTIONS_PARTITIONS_RANGES.put("im-generator-01-16", new int[] { 0, 1, 2, 3, 4, 5, 6, 7 });
+		AUCTIONS_PARTITIONS_RANGES.put("im-generator-02-16", new int[] { 8, 9, 10, 11, 12, 13, 14, 15 });
+
 
 		AUCTIONS_PARTITIONS_RANGES.put(new String(RandomStrings.RANDOM_STRINGS_NAME[0]), null); // DO NOT REMOVE! This is needed to init RandomStrings from the main thread first
 	}
@@ -152,6 +160,10 @@ public class KafkaNexmarkGenerator {
 		helper.put("cloud-24", 2l);
 		helper.put("cloud-25", 3l);
 		helper.put("cloud-33", 4l);
+
+		helper.put("im-generator-01", 0l);
+		helper.put("im-generator-02", 1l);
+		helper.put("im-generator-03", 2l);
 
 		helper.put("localhost", 0L);
 
@@ -482,7 +494,7 @@ public class KafkaNexmarkGenerator {
 
 				cachedBuffers = new ArrayBlockingQueue<>(CACHED_BUFFERS);
 				for (int i = 0; i < CACHED_BUFFERS; i++) {
-					cachedBuffers.offer(ByteBuffer.allocate(BUFFER_SIZE));
+					cachedBuffers.add(ByteBuffer.allocate(BUFFER_SIZE));
 				}
 
 				int personSize = personsGenerator.itemSize();
@@ -546,7 +558,6 @@ public class KafkaNexmarkGenerator {
 						if (bufP.remaining() < personSize) {
 							bufP.position(bufP.position() + bufP.remaining());
 							ProducerRecord<byte[], ByteBuffer> kafkaRecord = new ProducerRecord<>(topicNamePerson, targetPartition, genId, bufP);
-							throughputThrottler.acquire(BUFFER_SIZE);
 							kafkaProducerPersons.send(kafkaRecord, new InternalCallback(cachedBuffers, bufP, sharedCounterPerson, itemsInThisBufferP));
 							sentPersons += itemsInThisBufferP;
 							bufP = cachedBuffers.take();
@@ -565,7 +576,6 @@ public class KafkaNexmarkGenerator {
 						if (bufA.remaining() < auctionSize) {
 							bufA.position(bufA.position() + bufA.remaining());
 							ProducerRecord<byte[], ByteBuffer> kafkaRecord = new ProducerRecord<>(topicNameAuction, targetPartition, genId, bufA);
-							throughputThrottler.acquire(BUFFER_SIZE);
 							kafkaProducerAuctions.send(kafkaRecord, new InternalCallback(cachedBuffers, bufA, sharedCounterAuction, itemsInThisBufferA));
 							sentAuctions += itemsInThisBufferA;
 							bufA = cachedBuffers.take();
@@ -590,6 +600,7 @@ public class KafkaNexmarkGenerator {
 								(nowMs - (startNs / 1_000_000) / 1_000));
 						sentBytesDelta = 0;
 					}
+					throughputThrottler.acquire(BUFFER_SIZE);
 				}
 				while (!sharedCounterPerson.compareAndSet(sentPersons, 0)) {
 					Thread.sleep(100);
