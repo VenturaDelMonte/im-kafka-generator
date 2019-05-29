@@ -16,6 +16,7 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.serialization.Serializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,6 +25,7 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Queue;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -43,7 +45,7 @@ public class KafkaNexmarkGenerator {
 	private static final long ONE_MEGABYTE = 1024L * 1024L;
 	private static final long ONE_GIGABYTE = 1024L * 1024L * 1024L;
 
-	private static final long LOGGING_THRESHOLD = 128 * ONE_MEGABYTE;
+	private static final long LOGGING_THRESHOLD = 256 * ONE_MEGABYTE;
 
 	private static final ThreadGroup THREAD_GROUP = new ThreadGroup("Generator Thread Group");
 
@@ -105,18 +107,28 @@ public class KafkaNexmarkGenerator {
 
 
 		// GCP
-		PERSONS_PARTITIONS_RANGES.put("im-generator-01-16", new int[] { 0, 1, 2, 3, 4, 5, 6, 7 });
-		PERSONS_PARTITIONS_RANGES.put("im-generator-02-16", new int[] { 8, 9, 10, 11, 12, 13, 14, 15 });
 
-		AUCTIONS_PARTITIONS_RANGES.put("im-generator-01-16", new int[] { 0, 1, 2, 3, 4, 5, 6, 7 });
-		AUCTIONS_PARTITIONS_RANGES.put("im-generator-02-16", new int[] { 8, 9, 10, 11, 12, 13, 14, 15 });
+		int PARTITIONS = 8;
+		int NODES = 4;
+		for (int i = 0; i < NODES; i++) {
+			int tmp[] = new int[PARTITIONS];
+			for (int j = 0; j < PARTITIONS; j++) {
+				tmp[j] = i * PARTITIONS + j;
+			}
+			PERSONS_PARTITIONS_RANGES.put(String.format("im-generator-%02d-64", i + 1), tmp);
+			AUCTIONS_PARTITIONS_RANGES.put(String.format("im-generator-%02d-64", i + 1), tmp);
+			PERSONS_PARTITIONS_RANGES.put(String.format("im-generator-%02d-32", i + 1), tmp);
+			AUCTIONS_PARTITIONS_RANGES.put(String.format("im-generator-%02d-32", i + 1), tmp);
+			PERSONS_PARTITIONS_RANGES.put(String.format("im-generator-%02d-16", i + 1), tmp);
+			AUCTIONS_PARTITIONS_RANGES.put(String.format("im-generator-%02d-16", i + 1), tmp);
+		}
 
 
 		AUCTIONS_PARTITIONS_RANGES.put(new String(RandomStrings.RANDOM_STRINGS_NAME[0]), null); // DO NOT REMOVE! This is needed to init RandomStrings from the main thread first
 	}
 
 	private static final long MAX_PERSON_ID = 1_000_000_000L;
-	private static final long MAX_AUCTION_ID = 80_000_000_000L;
+	private static final long MAX_AUCTION_ID = 180_000_000_000L;
 
 	public static void main(String[] args) {
 
@@ -146,13 +158,15 @@ public class KafkaNexmarkGenerator {
 		int batchSize = params.kafkaBatchSize;
 
 		cfg.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.ByteArraySerializer");
-		cfg.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.ByteBufferSerializer");
+		cfg.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, "io.ventura.generators.nexmark.CustomSerializer");
 		cfg.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, params.kafkaServers);
 		cfg.put(ProducerConfig.RETRIES_CONFIG, 0);
 		cfg.put(ProducerConfig.BUFFER_MEMORY_CONFIG, params.kafkaBufferMemory);
-		cfg.put(ProducerConfig.BATCH_SIZE_CONFIG, batchSize * 4);
+		cfg.put(ProducerConfig.BATCH_SIZE_CONFIG, batchSize * params.kafkaBatchSizeMultiplier);
 		cfg.put(ProducerConfig.ACKS_CONFIG, "0");
-		cfg.put(ProducerConfig.LINGER_MS_CONFIG, "100");
+		cfg.put(ProducerConfig.LINGER_MS_CONFIG, params.kafkaLinger);
+		cfg.put("send.buffer.bytes", -1);
+		cfg.put("max.in.flight.requests.per.connection", "10");
 
 		int[] partitionsPersons = PERSONS_PARTITIONS_RANGES.get(params.hostname + "-" + params.personsPartition);
 		int[] partitionsAuctions = AUCTIONS_PARTITIONS_RANGES.get(params.hostname + "-" + params.auctionsPartition);
@@ -170,6 +184,8 @@ public class KafkaNexmarkGenerator {
 		helper.put("im-generator-01", 0l);
 		helper.put("im-generator-02", 1l);
 		helper.put("im-generator-03", 2l);
+		helper.put("im-generator-04", 3l);
+		helper.put("im-generator-05", 4l);
 
 		helper.put("localhost", 0L);
 
@@ -311,12 +327,12 @@ public class KafkaNexmarkGenerator {
 				offset = PERSON_EVENT_RATIO - 1;
 			}
 			long matchingPerson;
-			if (r.nextInt(100) > 20) {
+			if (r.nextInt(100) > 49) {
 				long personId = epoch * PERSON_EVENT_RATIO + offset;
 				matchingPerson = minPersonId + (personId / HOT_SELLER_RATIO) * HOT_SELLER_RATIO;
 			} else {
 				long personId = epoch * PERSON_EVENT_RATIO + offset + 1;
-				long activePersons = Math.min(personId, 20_000);
+				long activePersons = Math.min(personId, 60_000);
 				long n = r.nextLong(activePersons + 100);
 				matchingPerson = minPersonId + personId + activePersons - n;
 			}
@@ -523,13 +539,13 @@ public class KafkaNexmarkGenerator {
 				futureP = executor.scheduleAtFixedRate(new ThroughtputLogger(sharedCounterPerson, name, topicNamePerson + "-" + workerId, 5, personSize), 5, 5, TimeUnit.SECONDS);
 				futureA = executor.scheduleAtFixedRate(new ThroughtputLogger(sharedCounterAuction, name, topicNameAuction + "-" + workerId,5, auctionSize), 6, 5, TimeUnit.SECONDS);
 
-				double startNs = System.nanoTime();
+				double startMs = System.currentTimeMillis();
 				long sentBytes = 0;
 //				ThroughputThrottler throughputThrottler = new ThroughputThrottler(desiredThroughputBytesPerSecond, ((long) startNs) / 1_000_000);
 				ThreadLocalFixedSeedRandom randomness = ThreadLocalFixedSeedRandom.current();
 
 				RateLimiter throughputThrottler = RateLimiter.create(desiredThroughputBytesPerSecond);
-				LOG.debug("Create throughputThrottler for {} -> {} MB/sec", workerId, desiredThroughputBytesPerSecond / (1024 * 1024));
+				LOG.debug("Create throughputThrottler for {} -> {} MB/sec", workerId, desiredThroughputBytesPerSecond / ONE_MEGABYTE);
 				int chkP = personsGenerator.genChecksum();
 				int chkA = auctionsGenerator.genChecksum();
 				long pendingPerson = (recordsToGenerate / TOTAL_EVENT_RATIO) * PERSON_EVENT_RATIO;
@@ -571,11 +587,12 @@ public class KafkaNexmarkGenerator {
 							bufP.putInt(chkP);
 							itemsInThisBufferP = (int) Math.min(itemsPerBufferPerson, pendingPerson);
 							backlogPerson = pendingPerson - itemsInThisBufferP;
-							Preconditions.checkArgument(backlogPerson < prevBP);
+//							Preconditions.checkArgument(backlogPerson < prevBP);
 							bufP.putInt(itemsInThisBufferP);
 							bufP.putLong(backlogPerson);
 							sentBytes += BUFFER_SIZE;
 							sentBytesDelta += BUFFER_SIZE;
+							throughputThrottler.acquire(BUFFER_SIZE);
 						}
 					} else {
 						auctionsGenerator.writeItem(eventId, timestamp, randomness, bufA);
@@ -589,25 +606,26 @@ public class KafkaNexmarkGenerator {
 							bufA.putInt(chkA);
 							itemsInThisBufferA = (int) Math.min(itemsPerBufferAuction, pendingAuctions);
 							backlogAuction = pendingAuctions - itemsInThisBufferA;
-							Preconditions.checkArgument(backlogAuction < prevBA);
+//							Preconditions.checkArgument(backlogAuction < prevBA);
 							bufA.putInt(itemsInThisBufferA);
 							bufA.putLong(backlogAuction);
 							sentBytes += BUFFER_SIZE;
 							sentBytesDelta += BUFFER_SIZE;
+							throughputThrottler.acquire(BUFFER_SIZE);
 						}
 					}
 //					long nowMs = System.nanoTime() / 1_000_000;
 //					throughputThrottler.throttleIfNeeded(sentBytes, nowMs);
 
 					if (sentBytesDelta > LOGGING_THRESHOLD) {
-						long nowMs = timestamp / 1_000_000;
-						LOG.info("{} has just sent {} MB to kafka in {}",
+						LOG.info("{} has just sent {} MB to kafka in {} sec - rate limiter {} bytes/sec",
 								name,
 								sentBytes / ONE_MEGABYTE,
-								(nowMs - (startNs / 1_000_000) / 1_000));
+								(timestamp - startMs) / 1_000,
+								throughputThrottler.getRate());
 						sentBytesDelta = 0;
 					}
-					throughputThrottler.acquire(BUFFER_SIZE);
+
 				}
 				while (!sharedCounterPerson.compareAndSet(sentPersons, 0)) {
 					Thread.sleep(100);
@@ -615,14 +633,14 @@ public class KafkaNexmarkGenerator {
 				while (!sharedCounterAuction.compareAndSet(sentAuctions, 0)) {
 					Thread.sleep(100);
 				}
-				double end = System.nanoTime();
-				double diff = end - startNs;
+				double end = System.currentTimeMillis();
+				double diff = end - startMs;
 				LOG.info("{} is finished after {} msec and {} GBs and {} items with an overall throughput of {}",
 						name,
-						diff / 1_000_000,
+						diff,
 						sentBytes / ONE_GIGABYTE,
 						recordsToGenerate,
-						(sentBytes * 1_000_000_000.0) / (diff * ONE_GIGABYTE));
+						(sentBytes * 1_000.0) / (diff * ONE_GIGABYTE));
 			} catch (Throwable error) {
 				LOG.error("Error: {}", error);
 			} finally {

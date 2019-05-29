@@ -23,7 +23,16 @@ public class GeneratorParameters {
 	public int auctionsWorkers = 1;
 
 	@Parameter(names = {"-kafkaBufferMemory"}, description = "Specifies the partition of the persons topic of kafka")
-	public int kafkaBufferMemory = 64 * 1024 * 1024;
+	public int kafkaBufferMemory = 256 * 1024 * 1024;
+
+	@Parameter(names = {"-dataBufferMemory"}, description = "Specifies the partition of the persons topic of kafka")
+	public int dataBufferMemory = 256 * 1024 * 1024;
+
+	@Parameter(names = {"-kafkaBatchSizeMultiplier"}, description = "Specifies the partition of the persons topic of kafka")
+	public int kafkaBatchSizeMultiplier = 4;
+
+	@Parameter(names = {"-kafkaLinger"}, description = "Specifies the partition of the persons topic of kafka")
+	public int kafkaLinger = 100;
 
 	@Parameter(names = {"-kafkaBatchSize"}, description = "Specifies the partition of the persons topic of kafka")
 	public int kafkaBatchSize = 8196;
