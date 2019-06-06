@@ -310,7 +310,7 @@ public class KafkaNexmarkGenerator {
 			long epoch = eventId / TOTAL_EVENT_RATIO;
 			long offset = eventId % TOTAL_EVENT_RATIO;
 //			long now = System.nanoTime() / 1_000_000;
-			long nowMillis = System.currentTimeMillis();
+//			long nowMillis = System.currentTimeMillis();
 
 			if (offset < PERSON_EVENT_RATIO) {
 				epoch--;
@@ -341,13 +341,13 @@ public class KafkaNexmarkGenerator {
 			buf.putLong(matchingPerson); // 16
 			buf.put((byte) r.nextInt(64)); // 17
 			buf.putInt(r.nextInt(10) + 1); // 21
-			buf.putLong(nowMillis); // 29
-			buf.putLong(nowMillis + r.nextInt(MAX_AUCTION_LENGTH_MSEC) + MIN_AUCTION_LENGTH_MSEC); // 37
+			buf.putLong(timestamp); // 29
+			buf.putLong(timestamp + r.nextInt(MAX_AUCTION_LENGTH_MSEC) + MIN_AUCTION_LENGTH_MSEC); // 37
 			buf.putInt(r.nextInt(1000) + 1); // 41
 			int idx = r.nextInt(RandomStrings.NUM_RANDOM_STRINGS);
 			buf.put(RandomStrings.RANDOM_STRINGS_NAME[idx]); // 61
 			buf.put(RandomStrings.RANDOM_STRINGS_DESCR[idx]); // 261
-			buf.putLong(nowMillis); // 269
+			buf.putLong(timestamp); // 269
 		}
 
 		@Override
@@ -417,7 +417,7 @@ public class KafkaNexmarkGenerator {
 			buf.putInt(r.nextInt(50) + 18); // 192
 			buf.putInt(r.nextInt(9000) + 1000); // 196
 			buf.putShort((short) (r.nextBoolean() ? 0 : 1)); // 198
-			buf.putLong(System.currentTimeMillis()); // 206
+			buf.putLong(timestamp); // 206
 		}
 
 		@Override
