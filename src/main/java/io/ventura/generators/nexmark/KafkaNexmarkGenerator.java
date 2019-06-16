@@ -23,6 +23,7 @@ import org.slf4j.LoggerFactory;
 import javax.annotation.Nonnull;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -121,6 +122,10 @@ public class KafkaNexmarkGenerator {
 			AUCTIONS_PARTITIONS_RANGES.put(String.format("im-generator-%02d-32", i + 1), tmp);
 			PERSONS_PARTITIONS_RANGES.put(String.format("im-generator-%02d-16", i + 1), tmp);
 			AUCTIONS_PARTITIONS_RANGES.put(String.format("im-generator-%02d-16", i + 1), tmp);
+			PERSONS_PARTITIONS_RANGES.put(String.format("im-generator-%02d-8", i + 1), tmp);
+			AUCTIONS_PARTITIONS_RANGES.put(String.format("im-generator-%02d-8", i + 1), tmp);
+			PERSONS_PARTITIONS_RANGES.put(String.format("im-generator-%02d-4", i + 1), tmp);
+			AUCTIONS_PARTITIONS_RANGES.put(String.format("im-generator-%02d-4", i + 1), tmp);
 		}
 
 
@@ -171,6 +176,8 @@ public class KafkaNexmarkGenerator {
 		int[] partitionsPersons = PERSONS_PARTITIONS_RANGES.get(params.hostname + "-" + params.personsPartition);
 		int[] partitionsAuctions = AUCTIONS_PARTITIONS_RANGES.get(params.hostname + "-" + params.auctionsPartition);
 
+
+		LOG.debug("Selected: {}", Arrays.toString(partitionsPersons));
 
 		HashMap<String, Long> helper = new HashMap<>();
 
