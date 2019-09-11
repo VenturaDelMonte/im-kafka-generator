@@ -164,6 +164,8 @@ public class KafkaNexmarkGenerator {
 
 	public static void main(String[] args) {
 
+		LOG.debug("{}", Arrays.toString(args));
+
 		GeneratorParameters params = new GeneratorParameters();
 
 		JCommander.newBuilder()
@@ -772,13 +774,13 @@ public class KafkaNexmarkGenerator {
 							bufB.position(bufB.position() + bufB.remaining());
 							ProducerRecord<byte[], ByteBuffer> kafkaRecord = new ProducerRecord<>(topicNameBid, targetPartition, genId, bufB);
 							kafkaProducerBids.send(kafkaRecord, new InternalCallback(cachedBuffers, bufB, sharedCounterBid, itemsInThisBufferB));
-							sentAuctions += itemsInThisBufferB;
+							sentBids += itemsInThisBufferB;
 							bufB = cachedBuffers.take();
 							bufB.putInt(chkB);
 							itemsInThisBufferB = (int) Math.min(itemsPerBufferBid, pendingBids);
 							backlogBid = pendingBids - itemsInThisBufferB;
-							bufA.putInt(itemsInThisBufferB);
-							bufA.putLong(backlogBid);
+							bufB.putInt(itemsInThisBufferB);
+							bufB.putLong(backlogBid);
 							sentBytes += BUFFER_SIZE;
 							sentBytesDelta += BUFFER_SIZE;
 							throughputThrottler.acquire(BUFFER_SIZE);

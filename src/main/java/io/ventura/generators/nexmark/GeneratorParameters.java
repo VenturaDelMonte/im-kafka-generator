@@ -16,11 +16,20 @@ public class GeneratorParameters {
 	@Parameter(names = {"-auctionsPartition"}, description = "Specifies the partition of the persons topic of kafka")
 	public int auctionsPartition = 1;
 
+	@Parameter(names = {"-bidsPartition"}, description = "Specifies the partition of the persons topic of kafka")
+	public int bidsPartition = 1;
+
 	@Parameter(names = {"-personsWorkers"}, description = "Specifies the partition of the persons topic of kafka")
 	public int personsWorkers = 1;
 
+	@Parameter(names = {"-bidsWorkers"}, description = "Specifies the partition of the persons topic of kafka")
+	public int bidsWorkers = 1;
+
 	@Parameter(names = {"-auctionsWorkers"}, description = "Specifies the partition of the persons topic of kafka")
 	public int auctionsWorkers = 1;
+
+	@Parameter(names = {"-inputSizeItemsBids"}, description = "Specifies the partition of the persons topic of kafka")
+	public long inputSizeItemsBids = 1;
 
 	@Parameter(names = {"-kafkaBufferMemory"}, description = "Specifies the partition of the persons topic of kafka")
 	public int kafkaBufferMemory = 256 * 1024 * 1024;
@@ -48,5 +57,8 @@ public class GeneratorParameters {
 
 	@Parameter(names = {"-desiredAuctionsThroughputKBSec"}, description = "Specifies the partition of the persons topic of kafka")
 	public int desiredAuctionsThroughputKBSec = 512;
+
+	@Parameter(names = {"-desiredBidsThroughputKBSec"}, description = "Specifies the partition of the persons topic of kafka")
+	public int desiredBidsThroughputKBSec = 512;
 
 }
