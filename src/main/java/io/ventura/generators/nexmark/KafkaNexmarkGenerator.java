@@ -224,15 +224,15 @@ public class KafkaNexmarkGenerator {
 		helper.put("localhost", 0L);
 
 		long personStride = MAX_PERSON_ID / 5L;
-		long personStart = personStride * helper.get(params.hostname);
+		long personStart = 1_000 + personStride * helper.get(params.hostname);
 		long personEnd = personStart + personStride;
 
 		long auctionStride = MAX_AUCTION_ID / 5L;
-		long auctionStart = auctionStride * helper.get(params.hostname);
+		long auctionStart = 1_000 + auctionStride * helper.get(params.hostname);
 		long auctionEnd = auctionStart + auctionStride;
 
 		long bidsStride = MAX_BID_ID / 5L;
-		long bidsStart = bidsStride * helper.get(params.hostname);
+		long bidsStart = 1_000 + bidsStride * helper.get(params.hostname);
 		long bidsEnd = bidsStart + bidsStride;
 
 		try {
