@@ -740,9 +740,6 @@ public class KafkaNexmarkGenerator {
 				long sentBids = 0;
 				long eventId = 0;
 
-//				long prevBP = backlogPerson;
-//				long prevBA = backlogAuction;
-//				long prevBB = backlogBid;
 				for (; eventId < recordsToGenerate; eventId++) {
 
 					final long timestamp = System.currentTimeMillis();
@@ -884,7 +881,6 @@ public class KafkaNexmarkGenerator {
 
 		@Override
 		public void run() {
-//			long now = milliSecondFromNano();
 			long ts = System.currentTimeMillis();
 			time = (time + 1) % values.length;
 			values[time] = counter.get();
