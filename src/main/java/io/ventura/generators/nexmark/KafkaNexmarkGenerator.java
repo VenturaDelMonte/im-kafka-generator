@@ -8,6 +8,7 @@ import io.ventura.generators.nexmark.original.Emails;
 import io.ventura.generators.nexmark.original.Firstnames;
 import io.ventura.generators.nexmark.original.Lastnames;
 import io.ventura.generators.nexmark.original.RandomStrings;
+import io.ventura.generators.nexmark.utils.ParameterTool;
 import io.ventura.generators.nexmark.utils.ThreadLocalFixedSeedRandom;
 import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -166,43 +167,59 @@ public class KafkaNexmarkGenerator {
 
 		LOG.debug("{}", Arrays.toString(args));
 
-		GeneratorParameters params = new GeneratorParameters();
+//		GeneratorParameters params = new GeneratorParameters();
+//
+//		JCommander.newBuilder()
+//				.addObject(params)
+//				.acceptUnknownOptions(false)
+//				.build()
+//				.parse(args);
 
-		JCommander.newBuilder()
-				.addObject(params)
-				.acceptUnknownOptions(false)
-				.build()
-				.parse(args);
+		ParameterTool params = ParameterTool.fromArgs(args);
+
+		final int personsWorkers = params.getInt("personsWorkers", 1);
+		final int auctionsWorkers = params.getInt("auctionsWorkers", 1);
+		final int personsPartition = params.getInt("personsPartition", 1);
+		final long inputSizeItemsPersons = params.getInt("inputSizeItemsPersons", 1);
+		final int auctionsPartition = params.getInt("auctionsPartition", 1);
+		final long inputSizeItemsAuctions = params.getLong("inputSizeItemsAuctions", 1);
+		final String hostname = params.get("hostname", "localhost");
+		final String kafkaServers = params.get("kafkaServers", "localhost:9092");
+		final int kafkaBatchSize = params.getInt("kafkaBatchSize", 8192);
+		final int kafkaBufferMemory = params.getInt("kafkaBufferMemory", 256 * 1024 * 1024);
+		final int kafkaBatchSizeMultiplier = params.getInt("kafkaBatchSizeMultiplier", 4);
+		final int kafkaLinger = params.getInt("kafkaLinger", 100);
+		final int desiredAuctionsThroughputKBSec = params.getInt("desiredAuctionsThroughputKBSec", 1024);
 
 
-		ExecutorService workers = Executors.newFixedThreadPool(params.personsWorkers + params.auctionsWorkers);
+		ExecutorService workers = Executors.newFixedThreadPool(personsWorkers + auctionsWorkers);
 
 		LOG.info("Ready to start Nexmark generator with {} partitions and {} workers for persons topic ({} GB) and {} partitions and {} workers for auctions ({} GB) -- generator {} kafkaServers {}",
-				params.personsPartition,
-				params.personsWorkers,
-				params.inputSizeItemsPersons,
-				params.auctionsPartition,
-				params.auctionsWorkers,
-				params.inputSizeItemsAuctions,
-				params.hostname,
-				params.kafkaServers);
+				personsPartition,
+				personsWorkers,
+				inputSizeItemsPersons,
+				auctionsPartition,
+				auctionsWorkers,
+				inputSizeItemsAuctions,
+				hostname,
+				kafkaServers);
 
 		Properties cfg = new Properties();
 
-		int batchSize = params.kafkaBatchSize;
+		int batchSize = kafkaBatchSize;
 
 		cfg.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.ByteArraySerializer");
 		cfg.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, "io.ventura.generators.nexmark.CustomSerializer");
-		cfg.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, params.kafkaServers);
+		cfg.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaServers);
 		cfg.put(ProducerConfig.RETRIES_CONFIG, 0);
-		cfg.put(ProducerConfig.BUFFER_MEMORY_CONFIG, params.kafkaBufferMemory);
-		cfg.put(ProducerConfig.BATCH_SIZE_CONFIG, batchSize * params.kafkaBatchSizeMultiplier);
+		cfg.put(ProducerConfig.BUFFER_MEMORY_CONFIG, kafkaBufferMemory);
+		cfg.put(ProducerConfig.BATCH_SIZE_CONFIG, batchSize * kafkaBatchSizeMultiplier);
 		cfg.put(ProducerConfig.ACKS_CONFIG, "0");
-		cfg.put(ProducerConfig.LINGER_MS_CONFIG, params.kafkaLinger);
+		cfg.put(ProducerConfig.LINGER_MS_CONFIG, kafkaLinger);
 		cfg.put("send.buffer.bytes", -1);
 		cfg.put("max.in.flight.requests.per.connection", "10");
 
-		int[] partitionsPersons = PERSONS_PARTITIONS_RANGES.get(params.hostname + "-" + params.personsPartition);
+		int[] partitionsPersons = PERSONS_PARTITIONS_RANGES.get(hostname + "-" + personsPartition);
 
 		LOG.debug("Selected: {}", Arrays.toString(partitionsPersons));
 
@@ -224,19 +241,19 @@ public class KafkaNexmarkGenerator {
 		helper.put("localhost", 0L);
 
 		long personStride = MAX_PERSON_ID / 5L;
-		long personStart = 1_000 + personStride * helper.get(params.hostname);
+		long personStart = 1_000 + personStride * helper.get(hostname);
 		long personEnd = personStart + personStride;
 
 		long auctionStride = MAX_AUCTION_ID / 5L;
-		long auctionStart = 1_000 + auctionStride * helper.get(params.hostname);
+		long auctionStart = 1_000 + auctionStride * helper.get(hostname);
 		long auctionEnd = auctionStart + auctionStride;
 
 		long bidsStride = MAX_BID_ID / 5L;
-		long bidsStart = 1_000 + bidsStride * helper.get(params.hostname);
+		long bidsStart = 1_000 + bidsStride * helper.get(hostname);
 		long bidsEnd = bidsStart + bidsStride;
 
 		try {
-			int totalWorkers = params.auctionsWorkers + params.personsWorkers;
+			int totalWorkers = auctionsWorkers + personsWorkers;
 			CountDownLatch starter = new CountDownLatch(totalWorkers);
 			CountDownLatch controller = new CountDownLatch(totalWorkers);
 			CountDownLatch fairStarter = new CountDownLatch(1);
@@ -277,7 +294,7 @@ public class KafkaNexmarkGenerator {
 						PERSONS_TOPIC,
 						AUCTIONS_TOPIC,
 						BIDS_TOPIC,
-						params.hostname,
+						hostname,
 						targetPartition,
 						a,
 						p,
@@ -285,11 +302,11 @@ public class KafkaNexmarkGenerator {
 						kafkaProducerPersons,
 						kafkaProducerAuctions,
 						kafkaProducerBids,
-						params.inputSizeItemsPersons + params.inputSizeItemsAuctions,
+						inputSizeItemsPersons + inputSizeItemsAuctions,
 						starter,
 						controller,
 						fairStarter,
-						params.desiredAuctionsThroughputKBSec
+						desiredAuctionsThroughputKBSec
 				);
 
 				workers.submit(runner);
