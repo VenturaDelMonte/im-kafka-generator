@@ -335,7 +335,7 @@ public class KafkaNexmarkGenerator {
 
 	private final static int PERSON_RECORD_SIZE = 206;
 	private final static int AUCTION_RECORD_SIZE = 269;
-	private final static int BID_RECORD_SIZE = 8 + 8 + 8 + 8 + 64;
+	private final static int BID_RECORD_SIZE = 8 + 8 + 8 + 8;
 
 	private static final int HOT_SELLER_RATIO = 100;
 	private static final int HOT_AUCTION_RATIO = 100;
@@ -353,7 +353,7 @@ public class KafkaNexmarkGenerator {
 		private final long startBid, endBid;
 		private final long minPersonId, minAuctionId;
 
-		private static final byte[] DUMMY = new byte[64];
+//		private static final byte[] DUMMY = new byte[64];
 
 		BidGenerator(
 				long startBid,
@@ -409,7 +409,7 @@ public class KafkaNexmarkGenerator {
 			buf.putLong(auction);
 			buf.putDouble(r.nextDouble());
 			buf.putLong(timestamp);
-			buf.put(DUMMY);
+//			buf.put(DUMMY);
 		}
 
 		@Override
