@@ -19,6 +19,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nonnull;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
@@ -190,6 +194,7 @@ public class KafkaNexmarkGenerator {
 		final int kafkaBatchSizeMultiplier = params.getInt("kafkaBatchSizeMultiplier", 4);
 		final int kafkaLinger = params.getInt("kafkaLinger", 100);
 		final int desiredAuctionsThroughputKBSec = params.getInt("desiredAuctionsThroughputKBSec", 1024);
+		final String csvLoggingPath = params.get("csv", System.getProperty("java.io.tmpdir"));
 
 
 		ExecutorService workers = Executors.newFixedThreadPool(personsWorkers + auctionsWorkers);
@@ -306,7 +311,8 @@ public class KafkaNexmarkGenerator {
 						starter,
 						controller,
 						fairStarter,
-						desiredAuctionsThroughputKBSec
+						desiredAuctionsThroughputKBSec,
+						csvLoggingPath
 				);
 
 				workers.submit(runner);
@@ -599,6 +605,8 @@ public class KafkaNexmarkGenerator {
 		private final PersonsGenerator personsGenerator;
 		private final BidGenerator bidGenerator;
 
+		private final String csvDirectory;
+
 		GeneratorRunner(
 				int workerId,
 				String topicNamePerson,
@@ -616,7 +624,8 @@ public class KafkaNexmarkGenerator {
 				CountDownLatch starter,
 				CountDownLatch controller,
 				CountDownLatch fairStarter,
-				int desiredThroughputKBSec) {
+				int desiredThroughputKBSec,
+				String csvDirectory) {
 			this.targetPartitionSize = targetPartitionSize * ONE_GIGABYTE;
 			this.auctionsGenerator = auctionsGenerator;
 			this.topicNameAuction = topicNameAuction;
@@ -635,6 +644,7 @@ public class KafkaNexmarkGenerator {
 			this.topicNameBid = topicNameBid;
 			this.fairStarter = fairStarter;
 			this.desiredThroughputBytesPerSecond = ONE_KILOBYTE * desiredThroughputKBSec;
+			this.csvDirectory = csvDirectory;
 		}
 
 //		public abstract int itemSize();
@@ -699,9 +709,14 @@ public class KafkaNexmarkGenerator {
 				starter.countDown();
 				fairStarter.await();
 
-				futureP = executor.scheduleAtFixedRate(new ThroughtputLogger(sharedCounterPerson, name, topicNamePerson + "-" + workerId, 5, personSize), 5, 5, TimeUnit.SECONDS);
-				futureA = executor.scheduleAtFixedRate(new ThroughtputLogger(sharedCounterAuction, name, topicNameAuction + "-" + workerId,5, auctionSize), 6, 5, TimeUnit.SECONDS);
-				futureB = executor.scheduleAtFixedRate(new ThroughtputLogger(sharedCounterBid, name, topicNameBid + "-" + workerId,5, bidSize), 6, 5, TimeUnit.SECONDS);
+				ThroughtputLogger personLogger = new ThroughtputLogger(sharedCounterPerson, csvDirectory, name, topicNamePerson + "-" + workerId, 5, personSize);
+				futureP = executor.scheduleAtFixedRate(personLogger, 5, 5, TimeUnit.SECONDS);
+
+				ThroughtputLogger auctionLogger = new ThroughtputLogger(sharedCounterAuction, csvDirectory, name, topicNameAuction + "-" + workerId,5, auctionSize);
+				futureA = executor.scheduleAtFixedRate(auctionLogger, 6, 5, TimeUnit.SECONDS);
+
+				ThroughtputLogger bidsLogger = new ThroughtputLogger(sharedCounterBid, csvDirectory, name, topicNameBid + "-" + workerId,5, bidSize);
+				futureB = executor.scheduleAtFixedRate(bidsLogger, 6, 5, TimeUnit.SECONDS);
 
 				double startMs = System.currentTimeMillis();
 				long sentBytes = 0;
@@ -852,6 +867,39 @@ public class KafkaNexmarkGenerator {
 		}
 	}
 
+	public static Thread addShutdownHook(
+		final AutoCloseable service,
+		final String serviceName,
+		final Logger logger) {
+
+		final Thread shutdownHook = new Thread(() -> {
+			try {
+				service.close();
+			} catch (Throwable t) {
+				logger.error("Error during shutdown of {} via JVM shutdown hook.", serviceName, t);
+			}
+		}, serviceName + " shutdown hook");
+
+		return addShutdownHookThread(shutdownHook, serviceName, logger) ? shutdownHook : null;
+	}
+
+	public static boolean addShutdownHookThread(
+		final Thread shutdownHook,
+		final String serviceName,
+		final Logger logger) {
+
+		try {
+			// Add JVM shutdown hook to call shutdown of service
+			Runtime.getRuntime().addShutdownHook(shutdownHook);
+			return true;
+		} catch (IllegalStateException e) {
+			// JVM is already shutting down. no need to do our work
+		} catch (Throwable t) {
+			logger.error("Cannot register shutdown hook that cleanly terminates {}.", serviceName, t);
+		}
+		return false;
+	}
+
 	private static class ThroughtputLogger implements Runnable {
 
 		private static final int UPDATE_INTERVAL_SECONDS = 5;
@@ -870,13 +918,45 @@ public class KafkaNexmarkGenerator {
 
 		private final String name, topic;
 
-		public ThroughtputLogger(AtomicLong counter, String name, String topic, int timeSpanInSeconds, int eventSize) {
+		private final BufferedWriter writer;
+
+		private final StringBuffer stringBuffer;
+
+		private int writtenSoFar = 0;
+
+		private final Thread cleaningHelper;
+
+		private boolean logInit = false;
+
+		public ThroughtputLogger(AtomicLong counter, String dir, String name, String topic, int timeSpanInSeconds, int eventSize) throws Exception {
 			this.timeSpanInSeconds = timeSpanInSeconds - (timeSpanInSeconds % UPDATE_INTERVAL_SECONDS);
 			this.values = new long[this.timeSpanInSeconds / UPDATE_INTERVAL_SECONDS + 1];
 			this.eventSize = eventSize;
 			this.counter = counter;
 			this.name = name;
 			this.topic = topic;
+
+			File logDir = new File(dir);
+			if (!logDir.exists()) {
+				logDir.mkdirs();
+			}
+			File logFile = new File(logDir, name + "_" + topic + ".csv");
+			this.stringBuffer = new StringBuffer(8192);
+			if (logFile.exists()) {
+				this.writer = new BufferedWriter(new FileWriter(logFile, true));
+				this.writer.write("\n");
+			} else {
+				this.writer = new BufferedWriter(new FileWriter(logFile, false));
+				stringBuffer.append("ts,name,topic,metric,value");
+				stringBuffer.append("\n");
+				writer.write(stringBuffer.toString());
+				writtenSoFar += stringBuffer.length() * 2;
+			}
+
+			cleaningHelper = addShutdownHook(writer, topic, LOG);
+
+			stringBuffer.setLength(0);
+			logInit = true;
 		}
 
 		@Override
@@ -886,8 +966,25 @@ public class KafkaNexmarkGenerator {
 			values[time] = counter.get();
 			currentRate =  ((double) (values[time] - values[(time + 1) % values.length]) / timeSpanInSeconds);
 			double throughputGBs = currentRate * eventSize / ONE_GIGABYTE;
-			LOG.info("METRICS - {}: generator.nexmark.{}.{}.recordsPerSec: {}", ts, name, topic, currentRate);
-			LOG.info("METRICS - {}: generator.nexmark.{}.{}.gbps: {}", ts, name, topic, throughputGBs);
+			stringBuffer.append(ts).append(",").append(name).append(",").append(topic).append(",recordsPerSec,").append(currentRate).append("\n");
+			stringBuffer.append(ts).append(",").append(name).append(",").append(topic).append(",gbps,").append(throughputGBs).append("\n");
+//			LOG.info("METRICS - {}: generator.nexmark.{}.{}.recordsPerSec: {}", ts, name, topic, currentRate);
+//			LOG.info("METRICS - {}: generator.nexmark.{}.{}.gbps: {}", ts, name, topic, throughputGBs);
+			try {
+				writer.write(stringBuffer.toString());
+				writtenSoFar += stringBuffer.length() * 2;
+				if (writtenSoFar >= (8 * 1024 * 1024)) {
+					try {
+						writer.flush();
+					} catch (IOException e) {
+					}
+					writtenSoFar = 0;
+				}
+			} catch (IOException e) {
+				e.printStackTrace();
+			} finally {
+				stringBuffer.setLength(0);
+			}
 		}
 	}
 
