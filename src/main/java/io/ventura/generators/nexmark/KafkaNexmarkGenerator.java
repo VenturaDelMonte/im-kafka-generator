@@ -482,8 +482,8 @@ public class KafkaNexmarkGenerator {
 				matchingPerson = minPersonId + personId + activePersons - n;
 			}
 //
-			buf.putLong(auctionId); // 8
-			buf.putLong(matchingPerson); // 16
+			buf.putLong(Math.abs(auctionId)); // 8
+			buf.putLong(Math.abs(matchingPerson)); // 16
 			buf.put((byte) r.nextInt(64)); // 17
 			buf.putInt(r.nextInt(10) + 1); // 21
 			buf.putLong(timestamp); // 29
