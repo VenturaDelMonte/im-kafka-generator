@@ -154,10 +154,10 @@ public class KafkaNexmarkGenerator {
 			PERSONS_PARTITIONS_RANGES.put(String.format("im-generator-%02d-8", i + 1), tmp);
 			AUCTIONS_PARTITIONS_RANGES.put(String.format("im-generator-%02d-8", i + 1), tmp);
 			BIDS_PARTITIONS_RANGES.put(String.format("im-generator-%02d-8", i + 1), tmp);
-			PERSONS_PARTITIONS_RANGES.put(String.format("im-generator-%02d-4", i + 1), tmp);
-			AUCTIONS_PARTITIONS_RANGES.put(String.format("im-generator-%02d-4", i + 1), tmp);
-			BIDS_PARTITIONS_RANGES.put(String.format("im-generator-%02d-4", i + 1), tmp);
 		}
+		PERSONS_PARTITIONS_RANGES.put("im-generator-01-4", new int[] {0, 1, 2, 3});
+		AUCTIONS_PARTITIONS_RANGES.put("im-generator-01-4", new int[] {0, 1, 2, 3});
+		BIDS_PARTITIONS_RANGES.put("im-generator-01-4", new int[] {0, 1, 2, 3});
 
 
 		AUCTIONS_PARTITIONS_RANGES.put(new String(RandomStrings.RANDOM_STRINGS_NAME[0]), null); // DO NOT REMOVE! This is needed to init RandomStrings from the main thread first
