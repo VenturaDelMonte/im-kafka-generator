@@ -24,6 +24,7 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.util.Arrays;
@@ -195,7 +196,7 @@ public class KafkaNexmarkGenerator {
 		final int kafkaLinger = params.getInt("kafkaLinger", 100);
 		final int desiredAuctionsThroughputKBSec = params.getInt("desiredAuctionsThroughputKBSec", 1024);
 		final String csvLoggingPath = params.get("csv", System.getProperty("java.io.tmpdir"));
-
+		final boolean rustMode = params.getBoolean("rustMode", false);
 
 		ExecutorService workers = Executors.newFixedThreadPool(personsWorkers + auctionsWorkers);
 
@@ -312,7 +313,8 @@ public class KafkaNexmarkGenerator {
 						controller,
 						fairStarter,
 						desiredAuctionsThroughputKBSec,
-						csvLoggingPath
+						csvLoggingPath,
+						rustMode
 				);
 
 				workers.submit(runner);
@@ -607,6 +609,8 @@ public class KafkaNexmarkGenerator {
 
 		private final String csvDirectory;
 
+		private final boolean rustMode;
+
 		GeneratorRunner(
 				int workerId,
 				String topicNamePerson,
@@ -625,7 +629,8 @@ public class KafkaNexmarkGenerator {
 				CountDownLatch controller,
 				CountDownLatch fairStarter,
 				int desiredThroughputKBSec,
-				String csvDirectory) {
+				String csvDirectory,
+				boolean rustMode) {
 			this.targetPartitionSize = targetPartitionSize * ONE_GIGABYTE;
 			this.auctionsGenerator = auctionsGenerator;
 			this.topicNameAuction = topicNameAuction;
@@ -645,6 +650,7 @@ public class KafkaNexmarkGenerator {
 			this.fairStarter = fairStarter;
 			this.desiredThroughputBytesPerSecond = ONE_KILOBYTE * desiredThroughputKBSec;
 			this.csvDirectory = csvDirectory;
+			this.rustMode = rustMode;
 		}
 
 //		public abstract int itemSize();
@@ -685,7 +691,11 @@ public class KafkaNexmarkGenerator {
 
 				cachedBuffers = new ArrayBlockingQueue<>(CACHED_BUFFERS);
 				for (int i = 0; i < CACHED_BUFFERS; i++) {
-					cachedBuffers.add(ByteBuffer.allocate(BUFFER_SIZE));
+					ByteBuffer buff = ByteBuffer.allocate(BUFFER_SIZE);
+					if (rustMode) {
+						buff.order(ByteOrder.LITTLE_ENDIAN);
+					}
+					cachedBuffers.add(buff);
 				}
 
 				int personSize = personsGenerator.itemSize();
