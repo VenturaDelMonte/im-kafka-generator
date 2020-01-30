@@ -413,8 +413,8 @@ public class KafkaNexmarkGenerator {
 				bidder = minPersonId + personId + activePersons - n;
 			}
 
-			buf.putLong(bidder);
-			buf.putLong(auction);
+			buf.putLong(Math.abs(bidder));
+			buf.putLong(Math.abs(auction));
 			buf.putDouble(r.nextDouble());
 			buf.putLong(timestamp);
 //			buf.put(DUMMY);
@@ -488,8 +488,8 @@ public class KafkaNexmarkGenerator {
 			buf.putLong(Math.abs(matchingPerson)); // 16
 			buf.put((byte) r.nextInt(64)); // 17
 			buf.putInt(r.nextInt(10) + 1); // 21
-			buf.putLong(timestamp); // 29
-			buf.putLong(timestamp + r.nextInt(MAX_AUCTION_LENGTH_MSEC) + MIN_AUCTION_LENGTH_MSEC); // 37
+			buf.putLong(timestamp); // 25
+			buf.putLong(timestamp + r.nextInt(MAX_AUCTION_LENGTH_MSEC) + MIN_AUCTION_LENGTH_MSEC); // 33
 			buf.putInt(r.nextInt(1000) + 1); // 41
 			int idx = r.nextInt(RandomStrings.NUM_RANDOM_STRINGS);
 			buf.put(RandomStrings.RANDOM_STRINGS_NAME[idx]); // 61
