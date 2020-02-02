@@ -197,6 +197,7 @@ public class KafkaNexmarkGenerator {
 		final int desiredAuctionsThroughputKBSec = params.getInt("desiredAuctionsThroughputKBSec", 1024);
 		final String csvLoggingPath = params.get("csv", System.getProperty("java.io.tmpdir"));
 		final boolean rustMode = params.getBoolean("rustMode", false);
+		final boolean varyingWorkload = params.getBoolean("varyingWorkload", false);
 
 		ExecutorService workers = Executors.newFixedThreadPool(personsWorkers + auctionsWorkers);
 
@@ -732,8 +733,16 @@ public class KafkaNexmarkGenerator {
 				long sentBytes = 0;
 				ThreadLocalFixedSeedRandom randomness = ThreadLocalFixedSeedRandom.current();
 
-				RateLimiter throughputThrottler = RateLimiter.create(desiredThroughputBytesPerSecond);
-				LOG.debug("Create throughputThrottler for {} -> {} MB/sec", workerId, desiredThroughputBytesPerSecond / ONE_MEGABYTE);
+
+				long desiredThroughputBytesPerSecondMax = desiredThroughputBytesPerSecond;
+				long desiredThroughputBytesPerSecondMin = 1024 * 1024; // 1 MB/s
+				long throughputDelta = 512 * 1024;
+				long currentThroughput = desiredThroughputBytesPerSecondMin;
+				long throughputChangeTimestamp = 0;
+
+				RateLimiter throughputThrottler = RateLimiter.create(currentThroughput, 5, TimeUnit.SECONDS);
+				LOG.debug("Create throughputThrottler for {} -> << {} MB/sec : {} MB/sec >>",
+						workerId, desiredThroughputBytesPerSecondMin / ONE_MEGABYTE, desiredThroughputBytesPerSecondMax / ONE_MEGABYTE);
 				int chkP = personsGenerator.genChecksum();
 				int chkA = auctionsGenerator.genChecksum();
 				int chkB = bidGenerator.genChecksum();
@@ -834,6 +843,19 @@ public class KafkaNexmarkGenerator {
 								(timestamp - startMs) / 1_000,
 								throughputThrottler.getRate());
 						sentBytesDelta = 0;
+					}
+
+					if ((timestamp - throughputChangeTimestamp) > 20_000) {
+						currentThroughput += throughputDelta;
+						if (currentThroughput > desiredThroughputBytesPerSecondMax) {
+							throughputDelta = -throughputDelta;
+						} else if (currentThroughput < desiredThroughputBytesPerSecondMin) {
+							currentThroughput = desiredThroughputBytesPerSecondMin;
+							throughputDelta = -throughputDelta;
+						}
+						throughputThrottler.setRate(currentThroughput);
+						throughputChangeTimestamp = timestamp;
+						LOG.debug("Throttler changed to {}", currentThroughput);
 					}
 
 				}
