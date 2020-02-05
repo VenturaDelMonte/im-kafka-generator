@@ -315,7 +315,8 @@ public class KafkaNexmarkGenerator {
 						fairStarter,
 						desiredAuctionsThroughputKBSec,
 						csvLoggingPath,
-						rustMode
+						rustMode,
+						varyingWorkload
 				);
 
 				workers.submit(runner);
@@ -612,6 +613,8 @@ public class KafkaNexmarkGenerator {
 
 		private final boolean rustMode;
 
+		private final boolean varyingWorkload;
+
 		GeneratorRunner(
 				int workerId,
 				String topicNamePerson,
@@ -631,7 +634,8 @@ public class KafkaNexmarkGenerator {
 				CountDownLatch fairStarter,
 				int desiredThroughputKBSec,
 				String csvDirectory,
-				boolean rustMode) {
+				boolean rustMode,
+				boolean varyingWorkload) {
 			this.targetPartitionSize = targetPartitionSize * ONE_GIGABYTE;
 			this.auctionsGenerator = auctionsGenerator;
 			this.topicNameAuction = topicNameAuction;
@@ -652,6 +656,7 @@ public class KafkaNexmarkGenerator {
 			this.desiredThroughputBytesPerSecond = ONE_KILOBYTE * desiredThroughputKBSec;
 			this.csvDirectory = csvDirectory;
 			this.rustMode = rustMode;
+			this.varyingWorkload = varyingWorkload;
 		}
 
 //		public abstract int itemSize();
@@ -735,8 +740,8 @@ public class KafkaNexmarkGenerator {
 
 
 				long desiredThroughputBytesPerSecondMax = desiredThroughputBytesPerSecond;
-				long desiredThroughputBytesPerSecondMin = 1024 * 1024; // 1 MB/s
-				long throughputDelta = 512 * 1024;
+				long desiredThroughputBytesPerSecondMin = varyingWorkload ? 1024 * 1024 : desiredThroughputBytesPerSecond; // 1 MB/s
+				long throughputDelta = varyingWorkload ? 512 * 1024 : 0;
 				long currentThroughput = desiredThroughputBytesPerSecondMin;
 				long throughputChangeTimestamp = 0;
 
@@ -845,7 +850,7 @@ public class KafkaNexmarkGenerator {
 						sentBytesDelta = 0;
 					}
 
-					if ((timestamp - throughputChangeTimestamp) > 20_000) {
+					if ((timestamp - throughputChangeTimestamp) > 10_000) {
 						currentThroughput += throughputDelta;
 						if (currentThroughput > desiredThroughputBytesPerSecondMax) {
 							throughputDelta = -throughputDelta;
