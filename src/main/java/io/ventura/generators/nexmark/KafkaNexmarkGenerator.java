@@ -199,9 +199,12 @@ public class KafkaNexmarkGenerator {
 		final boolean rustMode = params.getBoolean("rustMode", false);
 		final boolean varyingWorkload = params.getBoolean("varyingWorkload", false);
 
+		final boolean oneRecordPerEvent = params.getBoolean("oneRecordPerEvent", false);
+
 		ExecutorService workers = Executors.newFixedThreadPool(personsWorkers + auctionsWorkers);
 
-		LOG.info("Ready to start Nexmark generator with {} partitions and {} workers for persons topic ({} GB) and {} partitions and {} workers for auctions ({} GB) -- generator {} kafkaServers {}",
+		LOG.info("Ready to start Nexmark generator with {} partitions and {} workers for persons topic ({} GB) and {} partitions and {} workers for auctions ({} GB) -- generator {} kafkaServers {}. " +
+						"Emit only one record per Kafka Event: {}",
 				personsPartition,
 				personsWorkers,
 				inputSizeItemsPersons,
@@ -209,7 +212,10 @@ public class KafkaNexmarkGenerator {
 				auctionsWorkers,
 				inputSizeItemsAuctions,
 				hostname,
-				kafkaServers);
+				kafkaServers,
+				oneRecordPerEvent);
+
+		// todo change name of kafka topics, when oneRecordPerEvent==true. because we then use a different schema!
 
 		Properties cfg = new Properties();
 
@@ -268,6 +274,7 @@ public class KafkaNexmarkGenerator {
 			long threadStrideAuction = (auctionEnd - auctionStart) / totalWorkers;
 			long threadStrideABids = (bidsEnd - bidsStart) / totalWorkers;
 			for (int j = 0; j < totalWorkers; j++) {
+				// every worker works for all three topics
 				Properties workerConfigPerson = (Properties) cfg.clone();
 				workerConfigPerson.put(ProducerConfig.CLIENT_ID_CONFIG, "nexmarkPersonsGen-" + j);
 
@@ -277,6 +284,7 @@ public class KafkaNexmarkGenerator {
 				Properties workerConfigBid = (Properties) cfg.clone();
 				workerConfigBid.put(ProducerConfig.CLIENT_ID_CONFIG, "nexmarkBidsGen-" + j);
 
+				// every worker gets assigned its section of the datasets
 				long startP = threadStridePerson * j;
 				long endP = startP + threadStridePerson;
 
@@ -316,7 +324,8 @@ public class KafkaNexmarkGenerator {
 						desiredAuctionsThroughputKBSec,
 						csvLoggingPath,
 						rustMode,
-						varyingWorkload
+						varyingWorkload,
+						oneRecordPerEvent
 				);
 
 				workers.submit(runner);
@@ -615,6 +624,8 @@ public class KafkaNexmarkGenerator {
 
 		private final boolean varyingWorkload;
 
+		private final boolean oneRecordPerEvent;
+
 		GeneratorRunner(
 				int workerId,
 				String topicNamePerson,
@@ -635,7 +646,8 @@ public class KafkaNexmarkGenerator {
 				int desiredThroughputKBSec,
 				String csvDirectory,
 				boolean rustMode,
-				boolean varyingWorkload) {
+				boolean varyingWorkload,
+				boolean oneRecordPerEvent) {
 			this.targetPartitionSize = targetPartitionSize * ONE_GIGABYTE;
 			this.auctionsGenerator = auctionsGenerator;
 			this.topicNameAuction = topicNameAuction;
@@ -657,6 +669,7 @@ public class KafkaNexmarkGenerator {
 			this.csvDirectory = csvDirectory;
 			this.rustMode = rustMode;
 			this.varyingWorkload = varyingWorkload;
+			this.oneRecordPerEvent = oneRecordPerEvent;
 		}
 
 //		public abstract int itemSize();
@@ -667,7 +680,12 @@ public class KafkaNexmarkGenerator {
 
 		@Override
 		public void run() {
+			// if !oneRecordPerEvent we only use one set of Buffers:
 			ArrayBlockingQueue<ByteBuffer> cachedBuffers = null;
+			// if oneRecordPerEvent, we use three sets. The buffers have the size of anPerson/Auction/Buffer record
+			ArrayBlockingQueue<ByteBuffer> cachedBuffersP = null;
+			ArrayBlockingQueue<ByteBuffer> cachedBuffersA = null;
+			ArrayBlockingQueue<ByteBuffer> cachedBuffersB = null;
 			ScheduledFuture<?> futureP = null;
 			ScheduledFuture<?> futureA = null;
 			ScheduledFuture<?> futureB = null;
@@ -694,15 +712,6 @@ public class KafkaNexmarkGenerator {
 				// make sure shutdown removes all pending tasks
 				executor.setContinueExistingPeriodicTasksAfterShutdownPolicy(false);
 				executor.setExecuteExistingDelayedTasksAfterShutdownPolicy(false);
-
-				cachedBuffers = new ArrayBlockingQueue<>(CACHED_BUFFERS);
-				for (int i = 0; i < CACHED_BUFFERS; i++) {
-					ByteBuffer buff = ByteBuffer.allocate(BUFFER_SIZE);
-					if (rustMode) {
-						buff.order(ByteOrder.LITTLE_ENDIAN);
-					}
-					cachedBuffers.add(buff);
-				}
 
 				int personSize = personsGenerator.itemSize();
 				int auctionSize = auctionsGenerator.itemSize();
@@ -755,24 +764,60 @@ public class KafkaNexmarkGenerator {
 				long pendingAuctions = (recordsToGenerate / TOTAL_EVENT_RATIO) * AUCTION_EVENT_RATIO;
 				long pendingBids = (recordsToGenerate / TOTAL_EVENT_RATIO) * BID_EVENT_RATIO;
 				long sentBytesDelta = 0;
-				ByteBuffer bufP = cachedBuffers.take();
-				ByteBuffer bufA = cachedBuffers.take();
-				ByteBuffer bufB = cachedBuffers.take();
-				bufA.putInt(chkA);
-				bufP.putInt(chkP);
-				bufB.putInt(chkB);
-				int itemsInThisBufferA = (int) Math.min(itemsPerBufferAuction, pendingAuctions);
-				int itemsInThisBufferP = (int) Math.min(itemsPerBufferPerson, pendingPerson);
-				int itemsInThisBufferB = (int) Math.min(itemsPerBufferBid, pendingBids);
-				long backlogPerson = pendingPerson - itemsInThisBufferP;
-				long backlogAuction = pendingAuctions - itemsInThisBufferA;
-				long backlogBid = pendingBids - itemsInThisBufferA;
-				bufP.putInt(itemsInThisBufferP);
-				bufP.putLong(backlogPerson);
-				bufA.putInt(itemsInThisBufferA);
-				bufA.putLong(backlogAuction);
-				bufB.putInt(itemsInThisBufferB);
-				bufB.putLong(backlogBid);
+
+				ByteBuffer bufP, bufA, bufB;
+				// for !oneRecordPerEvent only:
+				int itemsInThisBufferA=-1, itemsInThisBufferP=-1, itemsInThisBufferB=-1;
+				long backlogPerson, backlogAuction, backlogBid;
+
+				if (oneRecordPerEvent) {
+					cachedBuffersP = new ArrayBlockingQueue<>(CACHED_BUFFERS);
+					cachedBuffersA = new ArrayBlockingQueue<>(CACHED_BUFFERS);
+					cachedBuffersB = new ArrayBlockingQueue<>(CACHED_BUFFERS);
+					for (int i = 0; i < CACHED_BUFFERS; i++) {
+						ByteBuffer buffP = ByteBuffer.allocate(personSize);
+						ByteBuffer buffA = ByteBuffer.allocate(auctionSize);
+						ByteBuffer buffB = ByteBuffer.allocate(bidSize);
+						if (rustMode) {
+							LOG.error("one record at a time with rust mode is not supported!"); // todo
+						}
+						cachedBuffersP.add(buffP);
+						cachedBuffersA.add(buffA);
+						cachedBuffersB.add(buffB);
+					}
+
+					bufP = cachedBuffersP.take();
+					bufA = cachedBuffersA.take();
+					bufB = cachedBuffersB.take();
+				} else {
+					cachedBuffers = new ArrayBlockingQueue<>(CACHED_BUFFERS);
+					for (int i = 0; i < CACHED_BUFFERS; i++) {
+						ByteBuffer buff = ByteBuffer.allocate(BUFFER_SIZE);
+						if (rustMode) {
+							buff.order(ByteOrder.LITTLE_ENDIAN);
+						}
+						cachedBuffers.add(buff);
+					}
+
+					bufP = cachedBuffers.take();
+					bufA = cachedBuffers.take();
+					bufB = cachedBuffers.take();
+					bufA.putInt(chkA);
+					bufP.putInt(chkP);
+					bufB.putInt(chkB);
+					itemsInThisBufferA = (int) Math.min(itemsPerBufferAuction, pendingAuctions);
+					itemsInThisBufferP = (int) Math.min(itemsPerBufferPerson, pendingPerson);
+					itemsInThisBufferB = (int) Math.min(itemsPerBufferBid, pendingBids);
+					backlogPerson = pendingPerson - itemsInThisBufferP;
+					backlogAuction = pendingAuctions - itemsInThisBufferA;
+					backlogBid = pendingBids - itemsInThisBufferA;
+					bufP.putInt(itemsInThisBufferP);
+					bufP.putLong(backlogPerson);
+					bufA.putInt(itemsInThisBufferA);
+					bufA.putLong(backlogAuction);
+					bufB.putInt(itemsInThisBufferB);
+					bufB.putLong(backlogBid);
+				}
 
 				long sentPersons = 0;
 				long sentAuctions = 0;
@@ -784,10 +829,20 @@ public class KafkaNexmarkGenerator {
 					final long timestamp = System.currentTimeMillis();
 
 					long rem = eventId % TOTAL_EVENT_RATIO;
-					if (rem < PERSON_EVENT_RATIO) {
+					if (rem < PERSON_EVENT_RATIO) { // rem indicates, which type of buffer to generate next to keep the three streams balanced
 						personsGenerator.writeItem(eventId, timestamp, randomness, bufP);
 						pendingPerson--;
-						if (bufP.remaining() < personSize) {
+						if (oneRecordPerEvent) {
+							ProducerRecord<byte[], ByteBuffer> kafkaRecord = new ProducerRecord<>(topicNamePerson, targetPartition, genId, bufP);
+							kafkaProducerPersons.send(kafkaRecord, new InternalCallback(cachedBuffersP, bufP, sharedCounterPerson, 1));
+							bufP = cachedBuffersP.take();
+
+							sentBytes += personSize;
+							sentBytesDelta += personSize;
+							throughputThrottler.acquire(personSize);
+						}
+						// case: !oneRecordPerEvent
+						else if (bufP.remaining() < personSize) {
 							bufP.position(bufP.position() + bufP.remaining());
 							ProducerRecord<byte[], ByteBuffer> kafkaRecord = new ProducerRecord<>(topicNamePerson, targetPartition, genId, bufP);
 							kafkaProducerPersons.send(kafkaRecord, new InternalCallback(cachedBuffers, bufP, sharedCounterPerson, itemsInThisBufferP));
@@ -805,7 +860,17 @@ public class KafkaNexmarkGenerator {
 					} else if (rem < (PERSON_EVENT_RATIO + AUCTION_EVENT_RATIO)) {
 						auctionsGenerator.writeItem(eventId, timestamp, randomness, bufA);
 						pendingAuctions--;
-						if (bufA.remaining() < auctionSize) {
+						if (oneRecordPerEvent) {
+							ProducerRecord<byte[], ByteBuffer> kafkaRecord = new ProducerRecord<>(topicNameAuction, targetPartition, genId, bufA);
+							kafkaProducerPersons.send(kafkaRecord, new InternalCallback(cachedBuffersA, bufA, sharedCounterPerson, 1));
+							bufA = cachedBuffersA.take();
+
+							sentBytes += auctionSize;
+							sentBytesDelta += auctionSize;
+							throughputThrottler.acquire(auctionSize);
+						}
+						// case: !oneRecordPerEvent
+						else if (bufA.remaining() < auctionSize) {
 							bufA.position(bufA.position() + bufA.remaining());
 							ProducerRecord<byte[], ByteBuffer> kafkaRecord = new ProducerRecord<>(topicNameAuction, targetPartition, genId, bufA);
 							kafkaProducerAuctions.send(kafkaRecord, new InternalCallback(cachedBuffers, bufA, sharedCounterAuction, itemsInThisBufferA));
@@ -823,7 +888,17 @@ public class KafkaNexmarkGenerator {
 					} else {
 						bidGenerator.writeItem(eventId, timestamp, randomness, bufB);
 						pendingBids--;
-						if (bufB.remaining() < bidSize) {
+						if (oneRecordPerEvent) {
+							ProducerRecord<byte[], ByteBuffer> kafkaRecord = new ProducerRecord<>(topicNameBid, targetPartition, genId, bufB);
+							kafkaProducerPersons.send(kafkaRecord, new InternalCallback(cachedBuffersB, bufB, sharedCounterPerson, 1));
+							bufP = cachedBuffersB.take();
+
+							sentBytes += bidSize;
+							sentBytesDelta += bidSize;
+							throughputThrottler.acquire(bidSize);
+						}
+						// case: !oneRecordPerEvent
+						else if (bufB.remaining() < bidSize) {
 							bufB.position(bufB.position() + bufB.remaining());
 							ProducerRecord<byte[], ByteBuffer> kafkaRecord = new ProducerRecord<>(topicNameBid, targetPartition, genId, bufB);
 							kafkaProducerBids.send(kafkaRecord, new InternalCallback(cachedBuffers, bufB, sharedCounterBid, itemsInThisBufferB));
