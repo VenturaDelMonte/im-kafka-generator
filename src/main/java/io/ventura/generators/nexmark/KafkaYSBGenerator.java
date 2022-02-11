@@ -43,6 +43,7 @@ public class KafkaYSBGenerator {
 
 		// partition configs copied from KafkaNexmarkGenerator
 		PARTITIONS_RANGES.put("localhost-2", new int[] { 0, 1});
+		PARTITIONS_RANGES.put("localhost-8", new int[] { 0, 1, 2, 3, 4, 5, 6, 7 });
 
 		PARTITIONS_RANGES.put("cloud-14-32", new int[] { 0, 1, 2, 3, 4, 5, 6, 7 });
 		PARTITIONS_RANGES.put("cloud-37-32", new int[] { 8, 9, 10, 11, 12, 13, 14, 15 });
@@ -159,32 +160,18 @@ public class KafkaYSBGenerator {
 
 		helper.put("localhost", 0L);
 
-		long personStride = MAX_PERSON_ID / 5L;
-		long personStart = 1_000 + personStride * helper.get(hostname);
-		long personEnd = personStart + personStride;
-
-		long auctionStride = MAX_AUCTION_ID / 5L;
-		long auctionStart = 1_000 + auctionStride * helper.get(hostname);
-		long auctionEnd = auctionStart + auctionStride;
-
-		long bidsStride = MAX_BID_ID / 5L;
-		long bidsStart = 1_000 + bidsStride * helper.get(hostname);
-		long bidsEnd = bidsStart + bidsStride;
-
 		try {
 			int totalWorkers = n_workers;
 			CountDownLatch starter = new CountDownLatch(totalWorkers);
 			CountDownLatch controller = new CountDownLatch(totalWorkers);
 			CountDownLatch fairStarter = new CountDownLatch(1);
-			long threadStridePerson = (personEnd - personStart) / totalWorkers;
-			long threadStrideAuction = (auctionEnd - auctionStart) / totalWorkers;
-			long threadStrideABids = (bidsEnd - bidsStart) / totalWorkers;
+
 			for (int j = 0; j < totalWorkers; j++) {
 				// every worker works for all three topics
 				Properties workerConfig = (Properties) cfg.clone();
-				workerConfig.put(ProducerConfig.CLIENT_ID_CONFIG, "nexmarkPersonsGen-" + j);
+				workerConfig.put(ProducerConfig.CLIENT_ID_CONFIG, "YSBGen-" + j);
 
-				KafkaProducer<byte[], ByteBuffer> kafkaProducerPersons = new KafkaProducer<>(workerConfig);
+				KafkaProducer<byte[], ByteBuffer> kafkaProducerYSB = new KafkaProducer<>(workerConfig);
 
 				int targetPartition = partitions[j];
 
@@ -193,7 +180,7 @@ public class KafkaYSBGenerator {
 						YSB_TOPIC,
 						hostname,
 						targetPartition,
-						kafkaProducerPersons,
+						kafkaProducerYSB,
 						inputSizeItems,
 						starter,
 						controller,
