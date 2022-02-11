@@ -111,7 +111,7 @@ public class KafkaYSBGenerator {
 		final int kafkaBufferMemory = params.getInt("kafkaBufferMemory", 256 * 1024 * 1024);
 		final int kafkaBatchSizeMultiplier = params.getInt("kafkaBatchSizeMultiplier", 4);
 		final int kafkaLinger = params.getInt("kafkaLinger", 100);
-		final int desiredAuctionsThroughputKBSec = params.getInt("desiredAuctionsThroughputKBSec", 1024);
+		final int desiredThroughputKBSec = params.getInt("desiredThroughputKBSec", 1024);
 		final String csvLoggingPath = params.get("csv", System.getProperty("java.io.tmpdir"));
 		final boolean rustMode = params.getBoolean("rustMode", false);
 		final boolean varyingWorkload = params.getBoolean("varyingWorkload", false);
@@ -186,7 +186,7 @@ public class KafkaYSBGenerator {
 						starter,
 						controller,
 						fairStarter,
-						desiredAuctionsThroughputKBSec,
+						desiredThroughputKBSec,
 						csvLoggingPath,
 						varyingWorkload
 				);
@@ -306,8 +306,7 @@ public class KafkaYSBGenerator {
 				ThreadLocalFixedSeedRandom randomness = ThreadLocalFixedSeedRandom.current();
 
 				long desiredThroughputBytesPerSecondMax = desiredThroughputBytesPerSecond;
-//				long desiredThroughputBytesPerSecondMin = varyingWorkload ? 1024 * 1024 : desiredThroughputBytesPerSecond; // 1 MB/s
-				long desiredThroughputBytesPerSecondMin = desiredThroughputBytesPerSecond; // 1 MB/s
+				long desiredThroughputBytesPerSecondMin = varyingWorkload ? 1024 * 1024 : desiredThroughputBytesPerSecond; // 1 MB/s
 				long throughputDelta = varyingWorkload ? 512 * 1024 : 0;
 				long currentThroughput = desiredThroughputBytesPerSecondMin;
 				long throughputChangeTimestamp = 0;
