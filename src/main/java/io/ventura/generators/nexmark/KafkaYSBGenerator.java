@@ -302,6 +302,7 @@ public class KafkaYSBGenerator {
 				future = executor.scheduleAtFixedRate(personLogger, 5, 5, TimeUnit.SECONDS);
 
 				double startMs = System.currentTimeMillis();
+				double sinceLastLogMs = System.currentTimeMillis();
 				long sentBytes = 0;
 				ThreadLocalFixedSeedRandom randomness = ThreadLocalFixedSeedRandom.current();
 
@@ -375,12 +376,15 @@ public class KafkaYSBGenerator {
 					final long timestamp = System.currentTimeMillis();
 
 					if (sentBytesDelta > LOGGING_THRESHOLD) {
-						LOG.info("{} has just sent {} MB to kafka in {} sec - rate limiter {} bytes/sec",
+						LOG.info("{} has just sent {} MB to kafka in {} sec - rate limiter {} bytes/sec. Avg since last Log: {}",
 								name,
 								sentBytes / ONE_MEGABYTE,
 								(timestamp - startMs) / 1_000,
-								throughputThrottler.getRate());
+								throughputThrottler.getRate(),
+								(sentBytesDelta / ONE_MEGABYTE) / ((timestamp - sinceLastLogMs) / 1_000));
+
 						sentBytesDelta = 0;
+						sinceLastLogMs = System.currentTimeMillis();
 					}
 
 //					if ((timestamp - throughputChangeTimestamp) > 10_000) {
