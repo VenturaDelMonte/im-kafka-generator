@@ -45,7 +45,8 @@ public class YSBGenerator {
 		final int kafkaBufferMemory = params.getInt("kafkaBufferMemory", 256 * 1024 * 1024);
 		final int kafkaBatchSizeMultiplier = params.getInt("kafkaBatchSizeMultiplier", 4);
 		final int kafkaLinger = params.getInt("kafkaLinger", 100);
-		final int desiredAuctionsThroughputKBSec = params.getInt("desiredAuctionsThroughputKBSec", 1024);
+		final int desiredMinThroughputMBSec = params.getInt("desiredMinThroughputMBSec", 1);
+		final int desiredMaxThroughputMBSec = params.getInt("desiredMaxThroughputMBSec", 1);
 		final String csvLoggingPath = params.get("csv", System.getProperty("java.io.tmpdir"));
 
 
@@ -82,7 +83,7 @@ public class YSBGenerator {
 				Properties workerCfg = (Properties) cfg.clone();
 				workerCfg.put(ProducerConfig.CLIENT_ID_CONFIG, "ysb-" + j);
 				KafkaProducer<byte[], ByteBuffer> kafkaProducer = new KafkaProducer<>(workerCfg);
-				YSBGeneratorRunner runner = new YSBGeneratorRunner(j, "ysb-" + j, 0, kafkaProducer, inputSize, starter, controller, fairStarter, desiredAuctionsThroughputKBSec);
+				YSBGeneratorRunner runner = new YSBGeneratorRunner(j, "ysb-" + j, 0, kafkaProducer, inputSize, starter, controller, fairStarter, desiredMinThroughputMBSec, desiredMaxThroughputMBSec);
 				workers.submit(runner);
 			}
 			starter.await();
@@ -101,6 +102,8 @@ public class YSBGenerator {
 		private static final long ONE_GIGABYTE = 1024 * 1024 * 1024;
 
 		private static final long ONE_KILOBYTE = 1024;
+
+		private static final long ONE_MEGABYTE = 1024 * 1024;
 		protected final int workerId;
 		private final String name;
 		private final byte[] genId;
@@ -109,7 +112,7 @@ public class YSBGenerator {
 
 		private final KafkaProducer<byte[], ByteBuffer> kafkaYSB;
 		private final CountDownLatch controller, starter;
-		private final long desiredThroughputBytesPerSecond;
+		private final long desiredMinThroughputBytesPerSecond, desiredMaxThroughputBytesPerSecond;
 		private final CountDownLatch fairStarter;
 
 
@@ -122,7 +125,8 @@ public class YSBGenerator {
 				CountDownLatch starter,
 				CountDownLatch controller,
 				CountDownLatch fairStarter,
-				int desiredThroughputKBSec) {
+				int desiredMinThroughputMBSec,
+				int desiredMaxThroughputMBSec) {
 			this.targetPartitionSize = targetPartitionSize * ONE_GIGABYTE;
 
 			this.workerId = workerId;
@@ -133,7 +137,8 @@ public class YSBGenerator {
 			this.genId = new byte[4 + 4 + 8];
 			this.targetPartition = targetPartition;
 			this.fairStarter = fairStarter;
-			this.desiredThroughputBytesPerSecond = ONE_KILOBYTE * desiredThroughputKBSec;
+			this.desiredMinThroughputBytesPerSecond = ONE_MEGABYTE * desiredMinThroughputMBSec;
+			this.desiredMaxThroughputBytesPerSecond = ONE_MEGABYTE * desiredMaxThroughputMBSec;
 
 		}
 
@@ -195,12 +200,14 @@ public class YSBGenerator {
 					long sentBytes = 0;
 					ThreadLocalFixedSeedRandom randomness = ThreadLocalFixedSeedRandom.current();
 
-					long currentThroughput = desiredThroughputBytesPerSecond;
+					long currentThroughput = desiredMinThroughputBytesPerSecond;
+					long throughputDelta = (desiredMaxThroughputBytesPerSecond - desiredMinThroughputBytesPerSecond) / 10;
 					long throughputChangeTimestamp = 0;
 
 					RateLimiter throughputThrottler = RateLimiter.create(currentThroughput, 5, TimeUnit.SECONDS);
-//				LOG.debug("Create throughputThrottler for {} -> << {} MB/sec : {} MB/sec >>",
-//						workerId, desiredThroughputBytesPerSecondMin / ONE_MEGABYTE, desiredThroughputBytesPerSecondMax / ONE_MEGABYTE);
+					LOG.debug("Create throughputThrottler for {} -> << {} MB/sec : {} MB/sec >>",
+							workerId, desiredMinThroughputBytesPerSecond / ONE_MEGABYTE, desiredMaxThroughputBytesPerSecond / ONE_MEGABYTE);
+					boolean varyingWorkload = desiredMaxThroughputBytesPerSecond != desiredMinThroughputBytesPerSecond;
 
 					long sentBytesDelta = 0;
 					int recordsPerBuffer = (BUFFER_SIZE - METADATA_SIZE) / recordSize;
@@ -231,7 +238,7 @@ public class YSBGenerator {
 						pendingRecords--;
 						if (buf.remaining() < recordSize) {
 							buf.position(buf.position() + buf.remaining());
-							ProducerRecord<byte[], ByteBuffer> kafkaRecord = new ProducerRecord<>("ysb", targetPartition, genId, buf);
+							ProducerRecord<byte[], ByteBuffer> kafkaRecord = new ProducerRecord<>("ysb-flink", targetPartition, genId, buf);
 							kafkaYSB.send(kafkaRecord, new KafkaNexmarkGenerator.InternalCallback(cachedBuffers, buf, sharedCounterPerson, itemsPerBuffer));
 							sentRecords += itemsPerBuffer;
 							buf = cachedBuffers.take();
@@ -243,14 +250,23 @@ public class YSBGenerator {
 							sentBytes += BUFFER_SIZE;
 							sentBytesDelta += BUFFER_SIZE;
 							throughputThrottler.acquire(BUFFER_SIZE);
-							LOG.debug("Sent buffer " + sentRecords);
+//							LOG.debug("Sent buffer " + sentRecords);
 						}
-
+						if (varyingWorkload && (timestamp - throughputChangeTimestamp) > 10_000) {
+							currentThroughput += throughputDelta;
+							if (currentThroughput > desiredMaxThroughputBytesPerSecond) {
+								throughputDelta = -throughputDelta;
+							} else if (currentThroughput < desiredMinThroughputBytesPerSecond) {
+								currentThroughput = desiredMinThroughputBytesPerSecond;
+								throughputDelta = -throughputDelta;
+							}
+							throughputThrottler.setRate(currentThroughput);
+							throughputChangeTimestamp = timestamp;
+							LOG.debug("Throttler changed to {} MB/s", ((double) currentThroughput) / ONE_MEGABYTE);
+						}
 
 					}
 
-//					KafkaNexmarkGenerator.ThroughtputLogger personLogger = new KafkaNexmarkGenerator.ThroughtputLogger(sharedCounterPerson, csvDirectory, name, topicNamePerson + "-" + workerId, 5, personSize);
-//					futureP = executor.scheduleAtFixedRate(personLogger, 5, 5, TimeUnit.SECONDS);
 				} catch (Throwable error) {
 
 				}
